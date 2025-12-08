@@ -4,50 +4,57 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'برای حذف "yes" تایپ کنید'
+        description: '⚠️ Type "yes" to confirm deletion (برای تایید "yes" تایپ کنید)'
         required: true
         default: 'no'
+        type: choice
+        options:
+          - 'no'
+          - 'yes'
 
 jobs:
   delete-server:
     runs-on: ubuntu-latest
     
     steps:
-      - name: ✅ بررسی تأیید
+      - name: ⚡ Confirmation Check
         if: github.event.inputs.confirm != 'yes'
         run: |
-          echo "❌ حذف لغو شد. باید 'yes' تایپ کنید"
+          echo "❌ Deletion cancelled. You must select 'yes' to confirm."
           exit 1
       
-      - name: 📥 Checkout کد
+      - name: 📥 Checkout Code
         uses: actions/checkout@v4
       
-      - name: 🔧 نصب وابستگی‌ها
+      - name: 🔧 Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y jq bc
+          sudo apt-get install -y jq bc curl
       
-      - name: 📥 دریافت اطلاعات سرور
+      - name: 📤 Download Server Information
         uses: actions/download-artifact@v4
         with:
           name: server-info
         continue-on-error: true
       
-      - name: 🔐 تنظیم متغیرهای محیطی
+      - name: 🔐 Configure Environment
         run: |
           echo "DO_API_TOKEN=${{ secrets.DO_API_TOKEN }}" > .env
       
-      - name: 🗑️ حذف سرور
+      - name: 🗑️ Delete Server
         run: |
           chmod +x delete-server.sh
-          # پاسخ خودکار 'yes' به سوال تأیید
+          # Auto-confirm deletion with 'yes'
           echo "yes" | ./delete-server.sh
       
-      - name: 📊 نمایش خلاصه
+      - name: 📊 Summary Report
         if: always()
         run: |
-          echo "## ✅ سرور حذف شد" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ Server Successfully Deleted" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "سرور توسعه شما با موفقیت از DigitalOcean حذف شد." >> $GITHUB_STEP_SUMMARY
+          echo "Your development server has been removed from DigitalOcean." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "💰 هزینه نهایی در حساب DigitalOcean شما محاسبه خواهد شد." >> $GITHUB_STEP_SUMMARY
+          echo "💰 **Cost Calculation:**" >> $GITHUB_STEP_SUMMARY
+          echo "The final cost will be calculated based on usage duration." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "👀 Check your DigitalOcean dashboard for billing details." >> $GITHUB_STEP_SUMMARY
