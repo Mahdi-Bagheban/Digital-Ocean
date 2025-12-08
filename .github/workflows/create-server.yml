@@ -1,0 +1,73 @@
+name: 🚀 Create Development Server
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_name:
+        description: 'نام سرور'
+        required: false
+        default: 'mahdi-dev-workspace'
+      region:
+        description: 'منطقه دیتاسنتر'
+        required: false
+        default: 'fra1'
+        type: choice
+        options:
+          - fra1  # Frankfurt
+          - ams3  # Amsterdam
+          - lon1  # London
+          - nyc1  # New York
+
+jobs:
+  create-server:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout کد
+        uses: actions/checkout@v4
+      
+      - name: 🔧 نصب وابستگی‌ها
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq bc
+      
+      - name: 🔐 تنظیم متغیرهای محیطی
+        run: |
+          echo "DO_API_TOKEN=${{ secrets.DO_API_TOKEN }}" > .env
+          echo "SSH_KEY_NAME=${{ secrets.SSH_KEY_NAME }}" >> .env
+          echo "DROPLET_NAME=${{ github.event.inputs.server_name }}" >> .env
+          echo "REGION=${{ github.event.inputs.region }}" >> .env
+      
+      - name: 🚀 ایجاد سرور
+        run: |
+          chmod +x create-server.sh
+          ./create-server.sh
+      
+      - name: 📤 ذخیره اطلاعات سرور
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-info
+          path: |
+            .droplet_id
+            .droplet_ip
+            .droplet_created_at
+      
+      - name: 📊 نمایش خلاصه
+        run: |
+          echo "## 🎉 سرور با موفقیت ایجاد شد!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📋 اطلاعات سرور:" >> $GITHUB_STEP_SUMMARY
+          echo "- **شناسه**: $(cat .droplet_id)" >> $GITHUB_STEP_SUMMARY
+          echo "- **آی‌پی**: $(cat .droplet_ip)" >> $GITHUB_STEP_SUMMARY
+          echo "- **نام**: ${{ github.event.inputs.server_name }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **منطقه**: ${{ github.event.inputs.region }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🔌 دستورات اتصال:" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+          echo "ssh root@$(cat .droplet_ip)" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🌐 VS Code Server:" >> $GITHUB_STEP_SUMMARY
+          echo "http://$(cat .droplet_ip):8080" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ **توجه**: نصب نرم‌افزارها 2-5 دقیقه طول می‌کشد" >> $GITHUB_STEP_SUMMARY
