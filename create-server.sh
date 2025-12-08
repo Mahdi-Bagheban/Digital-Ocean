@@ -1,8 +1,8 @@
 #!/bin/bash
 
 #######################################
-# اسکریپت ایجاد Droplet در DigitalOcean
-# Memory-Optimized 32GB RAM
+# اسکریپت ایجاد سرور توسعه در DigitalOcean
+# Memory-Optimized 32GB RAM با KASM Workspace
 # توسط: Mahdi Bagheban
 # تاریخ: دسامبر 2025
 #######################################
@@ -66,19 +66,20 @@ if [ -z "$SSH_KEY_NAME" ]; then
 fi
 
 # تنظیمات Droplet
-DROPLET_NAME="${DROPLET_NAME:-mahdi-arts-memory-server}"
+DROPLET_NAME="${DROPLET_NAME:-mahdi-dev-workspace}"
 REGION="${REGION:-fra1}"  # فرانکفورت - نزدیک‌ترین به ایران
 SIZE="${SIZE:-m-2vcpu-32gb}"  # Memory-Optimized 32GB
 IMAGE="${IMAGE:-ubuntu-22-04-x64}"  # Ubuntu 22.04 LTS
-TAGS="${TAGS:-mahdiarts,memory-optimized,temp}"
+TAGS="${TAGS:-mahdiarts,kasm-workspace,development}"
 
-print_info "=== ایجاد Droplet در DigitalOcean ==="
+print_info "=== ایجاد سرور توسعه در DigitalOcean ==="
 echo ""
 print_info "نام سرور: $DROPLET_NAME"
 print_info "منطقه: $REGION"
 print_info "حافظه: 32GB RAM"
 print_info "سیستم‌عامل: Ubuntu 22.04 LTS"
 print_info "نوع: Memory-Optimized"
+print_info "محیط: KASM Workspace + نرم‌افزارهای توسعه"
 echo ""
 
 # دریافت ID کلید SSH
@@ -102,7 +103,52 @@ fi
 
 print_message "SSH Key پیدا شد: $SSH_KEY_NAME (ID: $SSH_KEY_ID)"
 
-# ایجاد Droplet
+# اسکریپت نصب نرم‌افزارها
+INSTALL_SCRIPT=$(cat << 'EOF'
+#!/bin/bash
+
+# نصب پایه‌های سیستم
+apt-get update
+apt-get upgrade -y
+apt-get install -y curl wget git build-essential
+
+# نصب Docker (پیش‌نیاز KASM)
+curl -fsSL https://get.docker.com -o get-docker.sh
+sh get-docker.sh
+usermod -aG docker root
+
+# نصب KASM Workspace
+cd /tmp
+wget https://kasm-static-content.s3.amazonaws.com/kasm_release_1.15.0.5b7fb6.tar.gz
+tar -xzf kasm_release_1.15.0.5b7fb6.tar.gz
+cd kasm_release
+sudo bash install.sh -L -e -m 32
+
+# نصب Node.js
+curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+apt-get install -y nodejs
+
+# نصب Python و ابزارها
+apt-get install -y python3 python3-pip python3-venv
+pip3 install --upgrade pip setuptools
+
+# نصب VS Code (اختیاری - از طریق Workspace)
+# ممکن است در محیط KASM قبلاً موجود باشد
+
+# نصب Git و ابزارهای توسعه
+apt-get install -y git vim nano htop tmux
+
+# نصب Android Studio (قابل نصب در KASM)
+# این قسمت می‌تواند از طریق KASM GUI نصب شود
+
+# نصب Perplexity و دیگر ابزارها (غیر خطی)
+# این‌ها معمولاً از طریق مرورگر یا appimage نصب می‌شوند
+
+echo "✓ نصب نرم‌افزارها انجام شد"
+EOF
+)
+
+# ایجاد Droplet با user_data برای نصب اتوماتیک
 print_message "در حال ایجاد Droplet..."
 echo ""
 
@@ -118,7 +164,8 @@ RESPONSE=$(curl -s -X POST \
     \"backups\": false,
     \"ipv6\": true,
     \"monitoring\": true,
-    \"tags\": [\"${TAGS//,/\",\"}\"]
+    \"tags\": [\"${TAGS//,/\",\"}\"],
+    \"user_data\": \"$(echo "$INSTALL_SCRIPT" | base64 -w 0)\"
   }" \
   "https://api.digitalocean.com/v2/droplets")
 
@@ -157,7 +204,8 @@ while [ "$STATUS" != "active" ] && [ $COUNTER -lt $MAX_WAIT ]; do
     
     STATUS=$(echo "$DROPLET_INFO" | jq -r '.droplet.status')
     
-    print_info "وضعیت: $STATUS (زمان سپری شده: ${COUNTER}s)"
+    PROGRESS=$((COUNTER / 3))
+    printf "${BLUE}[i]${NC} وضعیت: $STATUS (${PROGRESS}%%) \r"
 done
 
 if [ "$STATUS" = "active" ]; then
@@ -187,14 +235,24 @@ if [ "$STATUS" = "active" ]; then
     print_message "آی‌پی سرور در فایل .droplet_ip ذخیره شد"
     
     echo ""
-    print_info "برای اتصال به سرور از دستور زیر استفاده کنید:"
+    print_info "🔌 دستورات اتصال:"
     echo ""
-    echo -e "${GREEN}ssh root@$IPV4${NC}"
+    echo -e "${GREEN}SSH:${NC}"
+    echo "  ssh root@$IPV4"
+    echo ""
+    echo -e "${GREEN}KASM Workspace:${NC}"
+    echo "  https://$IPV4:443"
+    echo "  Port: 443 (HTTPS)"
     echo ""
     
     # ذخیره تاریخ ایجاد برای محاسبه هزینه
     date +%s > .droplet_created_at
     print_message "اطلاعات ایجاد سرور ثبت شد"
+    
+    echo ""
+    print_warning "⏱️  نصب نرم‌افزارها 5-15 دقیقه طول می‌کشد"
+    print_info "لطفا صبور باشید..."
+    echo ""
     
 else
     print_error "سرور در زمان مقرر آماده نشد!"
@@ -203,3 +261,7 @@ else
 fi
 
 print_message "عملیات با موفقیت انجام شد!"
+print_info "برای حذف سرور از دستور زیر استفاده کنید:"
+echo ""
+echo -e "${YELLOW}./delete-server.sh${NC}"
+echo ""
