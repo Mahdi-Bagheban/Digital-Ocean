@@ -89,8 +89,7 @@ jobs:
               "backups": false,
               "ipv6": true,
               "monitoring": true,
-              "tags": ["development", "github-actions"],
-              "user_data": "#!/bin/bash\nset -e\napt-get update\napt-get upgrade -y\n# Install Docker\ncurl -fsSL https://get.docker.com -o get-docker.sh\nsh get-docker.sh\nsystemctl enable docker\nsystemctl start docker\n# Install Node.js\ncurl -fsSL https://deb.nodesource.com/setup_20.x | bash -\napt-get install -y nodejs git vim htop python3 python3-pip\n# Configure firewall\nufw allow 22/tcp\nufw allow 80/tcp\nufw allow 443/tcp\nufw --force enable\necho 'Server setup complete!' > /root/setup-complete.txt"
+              "tags": ["development", "github-actions"]
             }' \
             "https://api.digitalocean.com/v2/droplets")
           
@@ -204,27 +203,18 @@ jobs:
           ssh root@${{ steps.server_info.outputs.ipv4 }}
           ```
           
-          ### 📦 نرم‌افزارهای نصب شده
-          
-          - ✅ Docker
-          - ✅ Node.js 20
-          - ✅ Python 3
-          - ✅ Git
-          - ✅ Development Tools
-          
           ### ⚠️ نکات مهم
           
           - 💰 هزینه سرور: $24/month ($0.036/hour)
           - 🗑️ برای حذف سرور از workflow "Delete Development Server" استفاده کنید
           - 🔐 اطلاعات سرور در Artifacts ذخیره شده است
-          - ⏱️ نصب نرم‌افزارها حدود 5-10 دقیقه طول می‌کشد
+          - ⏱️ سرور آماده استفاده است - نرم‌افزارها در نسخه بعد اضافه می‌شوند
           
           ### 🎯 مراحل بعدی
           
-          1. منتظر بمانید تا نصب نرم‌افزارها کامل شود (5-10 دقیقه)
-          2. از طریق SSH به سرور متصل شوید
-          3. بررسی کنید: `cat /root/setup-complete.txt`
-          4. پروژه خود را deploy کنید
+          1. از طریق SSH به سرور متصل شوید
+          2. نرم‌افزارهای مورد نیاز را نصب کنید
+          3. پروژه خود را deploy کنید
           
           ---
           
