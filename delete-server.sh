@@ -2,10 +2,10 @@
 
 #######################################
 # اسکریپت حذف سرور از DigitalOcean
-# با محاسبه هزینه استفاده
+# با محاسبه هزینه دقیق برای 64GB RAM
 # توسط: Mahdi Bagheban
 # تاریخ: دسامبر 2025
-# نسخه: 2.0 (بهبود شده)
+# نسخه: 3.0 (ارتقاء برای 64GB)
 #######################################
 
 set -o pipefail
@@ -15,6 +15,8 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
 NC='\033[0m'
 
 # تابع چاپ پیام‌ها
@@ -32,6 +34,14 @@ print_info() {
 
 print_warning() {
     echo -e "${YELLOW}[!]${NC} $1"
+}
+
+print_success() {
+    echo -e "${PURPLE}[★]${NC} $1"
+}
+
+print_step() {
+    echo -e "${CYAN}[→]${NC} $1"
 }
 
 exit_error() {
@@ -93,7 +103,7 @@ api_call() {
 
 # بررسی پیش‌نیازها
 check_prerequisites() {
-    print_info "بررسی پیش‌نیازها..."
+    print_step "بررسی پیش‌نیازها..."
     
     if ! command -v jq &> /dev/null; then
         exit_error "jq نصب نشده است"
@@ -139,7 +149,7 @@ check_droplet_id() {
 get_droplet_info() {
     local droplet_id=$1
     
-    print_message "در حال دریافت اطلاعات سرور..."
+    print_step "در حال دریافت اطلاعات سرور..."
     
     local response
     response=$(api_call GET "/droplets/$droplet_id") || return 1
@@ -149,7 +159,7 @@ get_droplet_info() {
         ERROR_MSG=$(echo "$response" | jq -r '.message')
         if [[ "$ERROR_MSG" == *"not found"* ]]; then
             print_warning "سرور با این شناسه وجود ندارد یا قبلاً حذف شده است"
-            return 2  # صورت خاصی نبود
+            return 2  # حالت خاص: سرور پیدا نشد
         else
             return 1
         fi
@@ -162,17 +172,23 @@ get_droplet_info() {
 delete_droplet() {
     local droplet_id=$1
     
-    print_message "درحال حذف سرور..."
+    print_step "آماده‌سازی برای حذف سرور..."
+    echo ""
     
-    # بررسی قبلی تایید
-    read -p "آیا بطور مطمئن هستید می‌خواهید این سرور را حذف کنید? (yes/no): " CONFIRM
+    # تایید قبل از حذف
+    print_warning "⚠️  شما در حال حذف سرور هستید!"
+    echo ""
+    read -p "آیا مطمئن هستید که می‌خواهید این سرور را حذف کنید? (yes/no): " CONFIRM
+    echo ""
     
     if [ "$CONFIRM" != "yes" ]; then
         print_info "عملیات حذف لغو شد"
         return 0
     fi
     
-    # حذف ایجاد کرد
+    print_step "درحال حذف سرور..."
+    
+    # حذف سرور
     local response
     response=$(curl -s -w "\n%{http_code}" -X DELETE \
       -H "Content-Type: application/json" \
@@ -195,10 +211,10 @@ delete_droplet() {
     fi
 }
 
-# محاسبه هزینه
+# محاسبه هزینه دقیق برای 64GB RAM
 calculate_cost() {
     if [ ! -f ".droplet_created_at" ]; then
-        print_warning "فایل زمان ایجاد نشد - محاسبه هزینه امکان‌پذیر نیست"
+        print_warning "فایل زمان ایجاد یافت نشد - محاسبه هزینه امکان‌پذیر نیست"
         return
     fi
     
@@ -206,34 +222,94 @@ calculate_cost() {
     CURRENT_TIME=$(date +%s)
     USAGE_SECONDS=$((CURRENT_TIME - CREATED_AT))
     
+    # محاسبه زمان استفاده
     USAGE_HOURS=$(echo "scale=2; $USAGE_SECONDS / 3600" | bc)
     USAGE_DAYS=$(echo "scale=2; $USAGE_HOURS / 24" | bc)
+    USAGE_MINUTES=$(echo "scale=0; $USAGE_SECONDS / 60" | bc)
     
-    # Memory-Optimized 32GB: $250/month = $0.347/hour
-    HOURLY_RATE=0.347
+    # Memory-Optimized Premium Intel 64GB: $428/month = $0.595/hour
+    HOURLY_RATE=0.595
     ESTIMATED_COST=$(echo "scale=2; $USAGE_HOURS * $HOURLY_RATE" | bc)
     
+    # محاسبه هزینه ماهانه در صورت ادامه
+    MONTHLY_COST=428
+    
     echo ""
-    echo "======================================"
-    print_message "اطلاعات استفاده از سرور:"
-    echo "======================================"
-    print_info "مدت زمان استفاده: ${USAGE_HOURS} ساعت (${USAGE_DAYS} روز)"
-    print_info "نرخ ساعتی: \$${HOURLY_RATE}"
-    print_info "هزینه تقریبی: \$${ESTIMATED_COST}"
-    echo "======================================"
+    echo "=========================================="
+    print_info "📊 خلاصه استفاده از سرور"
+    echo "=========================================="
+    echo ""
+    print_info "⏱️  مدت زمان استفاده:"
+    echo "   ${USAGE_MINUTES} دقیقه"
+    echo "   ${USAGE_HOURS} ساعت"
+    echo "   ${USAGE_DAYS} روز"
+    echo ""
+    print_info "💰 اطلاعات هزینه:"
+    echo "   نرخ ساعتی: \$${HOURLY_RATE}"
+    echo "   نرخ ماهانه: \$${MONTHLY_COST}"
+    echo ""
+    print_success "💵 هزینه تقریبی این دوره: \$${ESTIMATED_COST}"
+    echo ""
+    
+    # نکته مفید
+    if (( $(echo "$USAGE_HOURS < 1" | bc -l) )); then
+        print_info "💡 نکته: استفاده کمتر از ۱ ساعت - هزینه کم!"
+    elif (( $(echo "$USAGE_DAYS > 1" | bc -l) )); then
+        print_warning "⚠️  توجه: استفاده بیش از ۱ روز - هزینه قابل توجه!"
+    fi
+    
+    echo "=========================================="
     echo ""
 }
 
-# پاك‌سازی فایل‌ها
+# پاک‌سازی فایل‌ها
 cleanup_files() {
-    print_message "پاك‌سازی فایل‌های محلی..."
-    rm -f .droplet_id .droplet_ip .droplet_created_at
-    print_message "فایل‌های محلی پاك شدند"
+    print_step "پاک‌سازی فایل‌های محلی..."
+    
+    local files_to_remove=(".droplet_id" ".droplet_ip" ".droplet_created_at")
+    local removed_count=0
+    
+    for file in "${files_to_remove[@]}"; do
+        if [ -f "$file" ]; then
+            rm -f "$file"
+            removed_count=$((removed_count + 1))
+        fi
+    done
+    
+    if [ $removed_count -gt 0 ]; then
+        print_message "${removed_count} فایل محلی پاک شد"
+    else
+        print_info "فایلی برای پاک‌سازی یافت نشد"
+    fi
+}
+
+# نمایش خلاصه نهایی
+show_final_summary() {
+    echo ""
+    echo "=========================================="
+    print_success "✨ عملیات حذف سرور با موفقیت انجام شد"
+    echo "=========================================="
+    echo ""
+    print_info "📝 خلاصه عملیات:"
+    echo "   ✓ سرور از DigitalOcean حذف شد"
+    echo "   ✓ فایل‌های محلی پاک شدند"
+    echo "   ✓ هزینه محاسبه شد"
+    echo ""
+    print_info "🔄 برای ایجاد سرور جدید:"
+    echo -e "${CYAN}   ./create-server.sh${NC}"
+    echo ""
+    print_message "🎉 با تشکر از استفاده شما!"
+    echo "=========================================="
+    echo ""
 }
 
 # ===== MAIN EXECUTION =====
 main() {
-    print_info "=== شروع اسکریپت حذف سرور ==="
+    echo ""
+    echo "=========================================="
+    echo "🗑️  اسکریپت حذف سرور DigitalOcean"
+    echo "📦 نسخه 3.0 - 64GB RAM Server"
+    echo "=========================================="
     echo ""
     
     # مراحل شروعی
@@ -243,7 +319,7 @@ main() {
     check_droplet_id
     
     DROPLET_ID=$(cat .droplet_id)
-    print_info "شناسه سرور: $DROPLET_ID"
+    print_info "🆔 شناسه سرور: $DROPLET_ID"
     echo ""
     
     # دریافت اطلاعات
@@ -251,30 +327,43 @@ main() {
     RESULT=$?
     
     if [ $RESULT -eq 1 ]; then
-        exit_error "خطا در دریافت اطلاعات Droplet"
+        exit_error "خطا در دریافت اطلاعات سرور"
     fi
     
     if [ $RESULT -eq 2 ]; then
         print_warning "سرور قبلاً حذف شده است"
         cleanup_files
+        echo ""
+        print_message "✅ عملیات با موفقیت انجام شد"
+        echo ""
         exit 0
     fi
     
-    # نمایش اطلاعات
+    # نمایش اطلاعات سرور
     DROPLET_NAME=$(echo "$DROPLET_INFO" | jq -r '.droplet.name')
     IPV4=$(echo "$DROPLET_INFO" | jq -r '.droplet.networks.v4[0].ip_address')
     STATUS=$(echo "$DROPLET_INFO" | jq -r '.droplet.status')
+    SIZE=$(echo "$DROPLET_INFO" | jq -r '.droplet.size.slug')
+    REGION=$(echo "$DROPLET_INFO" | jq -r '.droplet.region.slug')
     
     echo ""
-    print_info "نام سرور: $DROPLET_NAME"
-    print_info "آی‌پی: $IPV4"
-    print_info "وضعیت: $STATUS"
+    echo "=========================================="
+    print_info "📋 اطلاعات سرور مورد نظر برای حذف"
+    echo "=========================================="
+    echo ""
+    echo "  📝 نام: $DROPLET_NAME"
+    echo "  🌐 آی‌پی: $IPV4"
+    echo "  📊 وضعیت: $STATUS"
+    echo "  💪 مشخصات: $SIZE"
+    echo "  📍 منطقه: $REGION"
+    echo ""
+    echo "=========================================="
     echo ""
     
     # محاسبه هزینه
     calculate_cost
     
-    # حذف
+    # حذف سرور
     delete_droplet "$DROPLET_ID"
     DELETE_RESULT=$?
     
@@ -282,12 +371,11 @@ main() {
         exit_error "خطا در حذف سرور"
     fi
     
-    # پاك‌سازی
+    # پاک‌سازی
     cleanup_files
     
-    echo ""
-    print_message "عملیات ایجاد شام انجام شد"
-    echo ""
+    # نمایش خلاصه نهایی
+    show_final_summary
 }
 
 main "$@"
