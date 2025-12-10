@@ -2,10 +2,11 @@
 
 #######################################
 # اسکریپت ایجاد سرور توسعه در DigitalOcean
-# Memory-Optimized 32GB RAM با KASM Workspace
+# Memory-Optimized Premium Intel 64GB RAM
+# با KASM Workspace و RustDesk Server
 # توسط: Mahdi Bagheban
 # تاریخ: دسامبر 2025
-# نسخه: 2.0 (بهبود شده)
+# نسخه: 3.0 (ارتقاء به 64GB + RustDesk)
 #######################################
 
 set -o pipefail  # خروج از اسکریپت اگر هر دستور فشل شود
@@ -15,6 +16,8 @@ GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
 NC='\033[0m' # بدون رنگ
 
 # تابع چاپ پیام‌ها
@@ -34,6 +37,14 @@ print_warning() {
     echo -e "${YELLOW}[!]${NC} $1"
 }
 
+print_success() {
+    echo -e "${PURPLE}[★]${NC} $1"
+}
+
+print_step() {
+    echo -e "${CYAN}[→]${NC} $1"
+}
+
 # تابع خروج با خطا
 exit_error() {
     print_error "$1"
@@ -42,7 +53,7 @@ exit_error() {
 
 # تابع چک کردن پیش‌نیازها
 check_prerequisites() {
-    print_info "بررسی پیش‌نیازها..."
+    print_step "بررسی پیش‌نیازها..."
     
     # بررسی jq
     if ! command -v jq &> /dev/null; then
@@ -89,12 +100,12 @@ load_and_validate_env() {
         SSH_KEY_NAME="MahdiArts"
     fi
     
-    # تنظیمات پیش‌فرض Droplet
-    DROPLET_NAME="${DROPLET_NAME:-mahdi-dev-workspace}"
+    # تنظیمات پیش‌فرض Droplet (ارتقاء به 64GB)
+    DROPLET_NAME="${DROPLET_NAME:-mahdi-dev-workspace-64gb}"
     REGION="${REGION:-fra1}"
-    SIZE="${SIZE:-m-2vcpu-32gb}"
-    IMAGE="${IMAGE:-ubuntu-22-04-x64}"
-    TAGS="${TAGS:-mahdiarts,kasm-workspace,development}"
+    SIZE="${SIZE:-m-16vcpu-64gb}"  # ارتقاء به 64GB RAM
+    IMAGE="${IMAGE:-ubuntu-24-04-x64}"  # Ubuntu 24.04 LTS
+    TAGS="${TAGS:-mahdiarts,kasm-workspace,rustdesk,development,64gb}"
 }
 
 # تابع API call با error handling
@@ -151,9 +162,9 @@ api_call() {
     return 1
 }
 
-# دریافت ID کلید SSH با بهتر خطا processing
+# دریافت ID کلید SSH
 get_ssh_key_id() {
-    print_message "در حال دریافت اطلاعات SSH Key..."
+    print_step "در حال دریافت اطلاعات SSH Key..."
     
     local response
     response=$(api_call GET "/account/keys") || return 1
@@ -172,90 +183,305 @@ get_ssh_key_id() {
     echo "$ssh_key_id"
 }
 
-# ایجاد اسکریپت نصب بهتر
+# ایجاد اسکریپت نصب بهبود یافته با RustDesk
 create_install_script() {
     cat << 'EOFSCRIPT'
 #!/bin/bash
 set -e
 
 # Log کردن
-LOG_FILE="/var/log/kasm-install.log"
+LOG_FILE="/var/log/server-install.log"
 exec > >(tee -a "$LOG_FILE")
 exec 2>&1
 
-echo "=== شروع نصب در $(date) ==="
+echo "========================================"
+echo "🚀 شروع نصب سرور توسعه"
+echo "📅 تاریخ: $(date)"
+echo "========================================"
 
-# نصب پایه‌های سیستم
-apt-get update || { echo "خطا در update"; exit 1; }
-apt-get upgrade -y || { echo "خطا در upgrade"; exit 1; }
-apt-get install -y curl wget git build-essential ca-certificates || { echo "خطا در نصب پایه‌ای"; exit 1; }
+# تابع نمایش پیشرفت
+print_step() {
+    echo ""
+    echo "[$(date +'%H:%M:%S')] ➜ $1"
+    echo "----------------------------------------"
+}
 
-# نصب Docker (پیش‌نیاز KASM)
-echo "درحال نصب Docker..."
-curl -fsSL https://get.docker.com -o get-docker.sh || { echo "خطا در دانلود Docker"; exit 1; }
-bash get-docker.sh || { echo "خطا در نصب Docker"; exit 1; }
+print_success() {
+    echo "[$(date +'%H:%M:%S')] ✓ $1"
+}
+
+print_error() {
+    echo "[$(date +'%H:%M:%S')] ✗ $1"
+}
+
+# 1. آپدیت سیستم
+print_step "آپدیت و ارتقای سیستم"
+apt-get update || { print_error "خطا در update"; exit 1; }
+apt-get upgrade -y || { print_error "خطا در upgrade"; exit 1; }
+print_success "سیستم آپدیت شد"
+
+# 2. نصب پکیج‌های پایه
+print_step "نصب پکیج‌های پایه"
+apt-get install -y \
+    curl wget git build-essential ca-certificates \
+    htop tmux vim nano net-tools ufw \
+    software-properties-common apt-transport-https || {
+    print_error "خطا در نصب پکیج‌های پایه"
+    exit 1
+}
+print_success "پکیج‌های پایه نصب شدند"
+
+# 3. پیکربندی Firewall
+print_step "پیکربندی Firewall (UFW)"
+ufw --force enable
+ufw default deny incoming
+ufw default allow outgoing
+ufw allow 22/tcp comment 'SSH'
+ufw allow 443/tcp comment 'HTTPS - KASM'
+ufw allow 80/tcp comment 'HTTP'
+ufw allow 21115:21119/tcp comment 'RustDesk Server'
+print_success "Firewall پیکربندی شد"
+
+# 4. نصب Docker
+print_step "نصب Docker و Docker Compose"
+curl -fsSL https://get.docker.com -o get-docker.sh || {
+    print_error "خطا در دانلود Docker"
+    exit 1
+}
+bash get-docker.sh || {
+    print_error "خطا در نصب Docker"
+    exit 1
+}
 usermod -aG docker root || true
 
-# بررسی موفقیت Docker
+# نصب Docker Compose
+curl -fsSL "https://github.com/docker/compose/releases/latest/download/docker-compose-$(uname -s)-$(uname -m)" \
+    -o /usr/local/bin/docker-compose
+chmod +x /usr/local/bin/docker-compose
+
 if ! command -v docker &> /dev/null; then
-    echo "Docker نصب نشد!"
+    print_error "Docker نصب نشد!"
     exit 1
 fi
 
-echo "Docker نصب شد: $(docker --version)"
+print_success "Docker نصب شد: $(docker --version)"
+print_success "Docker Compose نصب شد: $(docker-compose --version)"
 
-# نصب KASM Workspace
-echo "درحال نصب KASM Workspace..."
+# 5. نصب KASM Workspace
+print_step "نصب KASM Workspace (محیط دسکتاپ در مرورگر)"
 cd /tmp
 
-# دانلود با retry
 for i in {1..3}; do
     if wget -q https://kasm-static-content.s3.amazonaws.com/kasm_release_1.15.0.5b7fb6.tar.gz; then
         break
     fi
     if [ $i -eq 3 ]; then
-        echo "خطا: دانلود KASM ناموفق بود"
+        print_error "خطا: دانلود KASM ناموفق بود"
         exit 1
     fi
     echo "تلاش مجدد دانلود KASM ($i/3)..."
     sleep 5
 done
 
-# استخراج و نصب
-tar -xzf kasm_release_1.15.0.5b7fb6.tar.gz || { echo "خطا در استخراج KASM"; exit 1; }
-cd kasm_release
+tar -xzf kasm_release_1.15.0.5b7fb6.tar.gz || {
+    print_error "خطا در استخراج KASM"
+    exit 1
+}
 
-# نصب KASM (بدون interactive)
-bash install.sh -L -e -m 32 2>&1 | tee -a "$LOG_FILE" || {
-    echo "خطا در نصب KASM - بررسی لاگ:"
+cd kasm_release
+bash install.sh -L -e -m 64 2>&1 | tee -a "$LOG_FILE" || {
+    print_error "خطا در نصب KASM - بررسی لاگ:"
     tail -50 "$LOG_FILE"
     exit 1
 }
 
-# نصب Node.js
-echo "درحال نصب Node.js..."
+print_success "KASM Workspace نصب شد"
+
+# 6. نصب RustDesk Server
+print_step "نصب RustDesk Server (دسترسی از راه دور)"
+
+# ایجاد دایرکتوری
+mkdir -p /opt/rustdesk
+cd /opt/rustdesk
+
+# ایجاد docker-compose.yml
+cat > docker-compose.yml << 'EOF'
+version: '3'
+
+networks:
+  rustdesk-net:
+    external: false
+
+services:
+  hbbs:
+    container_name: hbbs
+    image: rustdesk/rustdesk-server:latest
+    command: hbbs -r rustdesk.example.com:21117
+    volumes:
+      - ./data:/root
+    networks:
+      - rustdesk-net
+    ports:
+      - 21115:21115
+      - 21116:21116
+      - 21116:21116/udp
+      - 21118:21118
+    restart: unless-stopped
+
+  hbbr:
+    container_name: hbbr
+    image: rustdesk/rustdesk-server:latest
+    command: hbbr
+    volumes:
+      - ./data:/root
+    networks:
+      - rustdesk-net
+    ports:
+      - 21117:21117
+      - 21119:21119
+    restart: unless-stopped
+EOF
+
+print_success "فایل docker-compose.yml ایجاد شد"
+
+# اجرای RustDesk Server
+docker-compose up -d || {
+    print_error "خطا در اجرای RustDesk Server"
+    exit 1
+}
+
+print_success "RustDesk Server راه‌اندازی شد"
+
+# صبر برای ایجاد کلید عمومی
+sleep 5
+
+# نمایش اطلاعات RustDesk
+if [ -f ./data/id_ed25519.pub ]; then
+    echo ""
+    echo "========================================"
+    echo "📋 اطلاعات RustDesk Server"
+    echo "========================================"
+    echo "🔑 کلید عمومی (Public Key):"
+    cat ./data/id_ed25519.pub
+    echo ""
+    echo "این کلید را در کلاینت RustDesk وارد کنید"
+    echo "========================================"
+    
+    # ذخیره در فایل جداگانه
+    cat ./data/id_ed25519.pub > /root/rustdesk-public-key.txt
+    print_success "کلید عمومی در /root/rustdesk-public-key.txt ذخیره شد"
+fi
+
+# 7. نصب Node.js
+print_step "نصب Node.js 20 LTS"
 curl -fsSL https://deb.nodesource.com/setup_20.x | bash - || true
-apt-get install -y nodejs || { echo "خطا در نصب Node.js"; exit 1; }
-echo "Node.js نصب شد: $(node --version)"
+apt-get install -y nodejs || {
+    print_error "خطا در نصب Node.js"
+    exit 1
+}
+print_success "Node.js نصب شد: $(node --version)"
+print_success "npm نصب شد: $(npm --version)"
 
-# نصب Python
-echo "درحال نصب Python..."
-apt-get install -y python3 python3-pip python3-venv || { echo "خطا در نصب Python"; exit 1; }
-pip3 install --upgrade pip setuptools 2>&1 | tail -5 || true
-echo "Python نصب شد: $(python3 --version)"
+# 8. نصب Python
+print_step "نصب Python 3 و ابزارهای مرتبط"
+apt-get install -y python3 python3-pip python3-venv python3-dev || {
+    print_error "خطا در نصب Python"
+    exit 1
+}
+pip3 install --upgrade pip setuptools wheel 2>&1 | tail -5 || true
+print_success "Python نصب شد: $(python3 --version)"
+print_success "pip نصب شد: $(pip3 --version)"
 
-# نصب ابزارهای توسعه
-echo "درحال نصب ابزارهای توسعه..."
-apt-get install -y git vim nano htop tmux curl wget net-tools || true
+# 9. نصب ابزارهای توسعه اضافی
+print_step "نصب ابزارهای توسعه اضافی"
+apt-get install -y \
+    zsh \
+    ripgrep \
+    fd-find \
+    bat \
+    tree \
+    jq \
+    httpie || true
 
-echo "=== نصب موفق در $(date) ==="
-echo "تمام نرم‌افزارها با موفقیت نصب شدند"
+print_success "ابزارهای توسعه نصب شدند"
+
+# 10. نصب Oh My Zsh (اختیاری)
+print_step "نصب Oh My Zsh"
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)" "" --unattended || true
+print_success "Oh My Zsh نصب شد"
+
+# 11. ایجاد اسکریپت اطلاعات سرور
+cat > /root/server-info.sh << 'INFOEOF'
+#!/bin/bash
+echo "========================================"
+echo "🖥️  اطلاعات سرور"
+echo "========================================"
+echo ""
+echo "📊 مشخصات سخت‌افزاری:"
+echo "  CPU: $(nproc) cores"
+echo "  RAM: $(free -h | awk '/^Mem:/ {print $2}') (Total)"
+echo "  Disk: $(df -h / | awk 'NR==2 {print $2}') (Total)"
+echo ""
+echo "🌐 اطلاعات شبکه:"
+echo "  IPv4: $(curl -s ifconfig.me)"
+echo "  Hostname: $(hostname)"
+echo ""
+echo "🐳 Docker:"
+docker --version
+docker-compose --version
+echo ""
+echo "📦 نرم‌افزارها:"
+echo "  Node.js: $(node --version 2>/dev/null || echo 'نصب نشده')"
+echo "  Python: $(python3 --version 2>/dev/null || echo 'نصب نشده')"
+echo "  Git: $(git --version 2>/dev/null || echo 'نصب نشده')"
+echo ""
+echo "🔐 RustDesk Server:"
+echo "  Status: $(docker ps --filter name=hbbs --format '{{.Status}}' 2>/dev/null || echo 'خاموش')"
+if [ -f /opt/rustdesk/data/id_ed25519.pub ]; then
+    echo "  Public Key:"
+    cat /opt/rustdesk/data/id_ed25519.pub
+fi
+echo ""
+echo "========================================"
+INFOEOF
+
+chmod +x /root/server-info.sh
+print_success "اسکریپت اطلاعات سرور ایجاد شد: /root/server-info.sh"
+
+# 12. پاکسازی
+print_step "پاکسازی فایل‌های موقت"
+apt-get autoremove -y
+apt-get clean
+rm -rf /tmp/*
+print_success "پاکسازی انجام شد"
+
+# پایان
+echo ""
+echo "========================================"
+echo "✅ نصب با موفقیت کامل شد!"
+echo "📅 زمان پایان: $(date)"
+echo "========================================"
+echo ""
+echo "📝 برای مشاهده اطلاعات کامل سرور:"
+echo "   /root/server-info.sh"
+echo ""
+echo "🌐 دسترسی به KASM Workspace:"
+echo "   https://$(curl -s ifconfig.me):443"
+echo ""
+echo "🔐 دسترسی به RustDesk:"
+echo "   Server: $(curl -s ifconfig.me)"
+echo "   Ports: 21115-21119"
+if [ -f /opt/rustdesk/data/id_ed25519.pub ]; then
+    echo "   Public Key: $(cat /opt/rustdesk/data/id_ed25519.pub)"
+fi
+echo ""
+echo "========================================"
 EOFSCRIPT
 }
 
 # ایجاد Droplet
 create_droplet() {
-    print_message "در حال ایجاد Droplet..."
+    print_step "در حال ایجاد Droplet با 64GB RAM..."
     
     # ایجاد install script
     local install_script
@@ -263,7 +489,7 @@ create_droplet() {
     
     # تبدیل به Base64 صحیح (بدون wrap کردن)
     local user_data_base64
-    user_data_base64=$(echo "$install_script" | base64 -w 0)
+    user_data_base64=$(echo "$install_script" | base64 -w 0 2>/dev/null || echo "$install_script" | base64)
     
     # ایجاد JSON payload
     local payload=$(cat <<EOF
@@ -276,7 +502,7 @@ create_droplet() {
     "backups": false,
     "ipv6": true,
     "monitoring": true,
-    "tags": ["${TAGS//,/\",\""}"],
+    "tags": ["${TAGS//,/\",\"}"],
     "user_data": "$user_data_base64"
 }
 EOF
@@ -314,7 +540,7 @@ EOF
 wait_for_droplet() {
     local droplet_id=$1
     
-    print_message "در حال انتظار برای آماده شدن سرور..."
+    print_step "در حال انتظار برای آماده شدن سرور..."
     
     local status="new"
     local counter=0
@@ -361,7 +587,7 @@ wait_for_droplet() {
 get_droplet_info() {
     local droplet_id=$1
     
-    print_message "در حال دریافت اطلاعات سرور..."
+    print_step "در حال دریافت اطلاعات سرور..."
     
     local response
     response=$(api_call GET "/droplets/$droplet_id") || return 1
@@ -382,7 +608,7 @@ get_droplet_info() {
     echo "$ipv4"
 }
 
-# نمایش خلاصه
+# نمایش خلاصه با RustDesk
 show_summary() {
     local droplet_id=$1
     local droplet_name=$2
@@ -390,41 +616,76 @@ show_summary() {
     local region=$4
     
     echo ""
-    echo "======================================"
-    print_message "اطلاعات سرور شما:"
-    echo "======================================"
-    print_info "شناسه: $droplet_id"
-    print_info "نام: $droplet_name"
-    print_info "آی‌پی: $ipv4"
-    print_info "منطقه: $region"
-    print_info "حافظه RAM: 32GB"
-    print_info "CPU: 2 vCPU"
-    print_info "دیسک: 100GB SSD"
-    echo "======================================"
+    echo "=========================================="
+    print_success "🎉 سرور شما با موفقیت ایجاد شد!"
+    echo "=========================================="
+    echo ""
+    
+    print_info "📋 مشخصات سرور:"
+    echo "  🆔 شناسه: $droplet_id"
+    echo "  📝 نام: $droplet_name"
+    echo "  🌍 آی‌پی: $ipv4"
+    echo "  📍 منطقه: $region"
+    echo ""
+    
+    print_info "💪 قدرت پردازشی:"
+    echo "  🧠 RAM: 64GB DDR4"
+    echo "  🔥 CPU: 16 vCPUs (Dedicated)"
+    echo "  ⚡ SSD: 400GB NVMe"
+    echo "  🌐 Transfer: 8TB"
+    echo "  🚀 Network: تا 10 Gbps"
     echo ""
     
     print_info "🔌 دستورات اتصال:"
     echo ""
-    echo -e "${GREEN}SSH:${NC}"
-    echo "  ssh root@$ipv4"
+    echo -e "${GREEN}1️⃣  SSH (دسترسی ترمینال):${NC}"
+    echo -e "${CYAN}   ssh root@$ipv4${NC}"
     echo ""
-    echo -e "${GREEN}KASM Workspace (دسکتاپ در مرورگر):${NC}"
-    echo "  https://$ipv4:443"
-    echo "  Username: admin@kasm.local"
-    echo "  (رمز عبور خودکار تعیین می‌شود)"
+    echo -e "${GREEN}2️⃣  KASM Workspace (دسکتاپ در مرورگر):${NC}"
+    echo -e "${CYAN}   https://$ipv4:443${NC}"
+    echo "   Username: admin@kasm.local"
+    echo "   (رمز عبور را از SSH دریافت کنید)"
+    echo ""
+    echo -e "${GREEN}3️⃣  RustDesk Server (دسترسی از راه دور):${NC}"
+    echo -e "${CYAN}   Server Address: $ipv4${NC}"
+    echo "   Ports: 21115-21119"
+    echo "   برای دریافت کلید عمومی:"
+    echo -e "${CYAN}   ssh root@$ipv4 cat /root/rustdesk-public-key.txt${NC}"
     echo ""
     
-    print_warning "⏱️  نصب نرم‌افزارها 5-15 دقیقه طول می‌کشد"
-    print_info "آپ لاگ نصب را می‌توانید بررسی کنید:"
-    echo "  ssh root@$ipv4 tail -f /var/log/kasm-install.log"
+    print_warning "⏱️  نصب نرم‌افزارها ۵-۲۰ دقیقه طول می‌کشد"
+    echo ""
+    print_info "📊 مشاهده لاگ نصب:"
+    echo -e "${CYAN}   ssh root@$ipv4 tail -f /var/log/server-install.log${NC}"
+    echo ""
+    print_info "📋 مشاهده اطلاعات کامل سرور:"
+    echo -e "${CYAN}   ssh root@$ipv4 /root/server-info.sh${NC}"
     echo ""
     
-    print_message "عملیات با موفقیت انجام شد!"
+    print_info "💰 هزینه تقریبی:"
+    echo "  ساعتی: ~$0.595/hour"
+    echo "  روزانه: ~$14.28/day"
+    echo "  ماهانه: ~$428/month"
+    echo ""
+    
+    print_warning "⚠️  یادآوری: حتماً بعد از اتمام کار، سرور را حذف کنید!"
+    echo ""
+    print_info "🗑️  حذف سرور:"
+    echo -e "${YELLOW}   ./delete-server.sh${NC}"
+    echo ""
+    echo "=========================================="
+    print_success "✨ از سرور قدرتمند خود لذت ببرید!"
+    echo "=========================================="
+    echo ""
 }
 
 # ===== MAIN EXECUTION =====
 main() {
-    print_info "=== شروع اسکریپت ایجاد سرور ==="
+    echo ""
+    echo "=========================================="
+    echo "🚀 اسکریپت ایجاد سرور DigitalOcean"
+    echo "📦 نسخه 3.0 - 64GB RAM + RustDesk"
+    echo "=========================================="
     echo ""
     
     # مراحل پیش‌نیاز
@@ -433,11 +694,16 @@ main() {
     load_and_validate_env
     
     echo ""
-    print_info "تنظیمات Droplet:"
-    print_info "  نام: $DROPLET_NAME"
-    print_info "  منطقه: $REGION"
-    print_info "  حافظه: 32GB"
-    print_info "  سیستم‌عامل: Ubuntu 22.04 LTS"
+    print_info "⚙️  تنظیمات Droplet:"
+    echo "  📝 نام: $DROPLET_NAME"
+    echo "  📍 منطقه: $REGION"
+    echo "  💪 مشخصات: Memory-Optimized Premium Intel"
+    echo "  🧠 RAM: 64GB DDR4"
+    echo "  🔥 CPU: 16 vCPUs (Dedicated)"
+    echo "  ⚡ SSD: 400GB NVMe"
+    echo "  🌐 Transfer: 8TB"
+    echo "  🐧 سیستم‌عامل: Ubuntu 24.04 LTS"
+    echo "  📦 نرم‌افزار: KASM + RustDesk + Docker + Node.js + Python"
     echo ""
     
     # دریافت SSH Key
@@ -454,11 +720,6 @@ main() {
     
     # نمایش خلاصه
     show_summary "$DROPLET_ID" "$DROPLET_NAME" "$DROPLET_IP" "$REGION"
-    
-    print_info "برای حذف سرور از دستور زیر استفاده کنید:"
-    echo ""
-    echo -e "${YELLOW}./delete-server.sh${NC}"
-    echo ""
 }
 
 # اجرای main
