@@ -135,15 +135,15 @@ EOF
             echo "### 🌐 Access:"
             echo ""
             echo "**SSH:**"
-            echo \'\`\`\`bash\'
+            echo '```bash'
             echo "ssh root@$(cat .droplet_ip)"
-            echo \'\`\`\`\'
+            echo '```'
             echo ""
             echo "**KASM Workspace:**"
-            echo \'\`\`\`\'
+            echo '```'
             echo "https://$(cat .droplet_ip):443"
             echo "Username: admin@kasm.local"
-            echo \'\`\`\`\'
+            echo '```'
             echo ""
             echo "### ⏱️ Important Notes:"
             echo "- Software installation may take 5-15 minutes"
