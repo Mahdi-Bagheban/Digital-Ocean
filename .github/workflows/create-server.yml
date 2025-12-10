@@ -21,29 +21,90 @@ on:
 jobs:
   create-server:
     runs-on: ubuntu-latest
+    timeout-minutes: 30  # ✅ Timeout برای جلوگیری از hanging
     
     steps:
       - name: 📥 Checkout Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       
       - name: 🔧 Install Dependencies
         run: |
+          set -e  # خروج در صورت خطا
+          echo "Installing system dependencies..."
           sudo apt-get update
-          sudo apt-get install -y jq bc curl
+          sudo apt-get install -y jq bc curl wget
+          echo "✓ Dependencies installed"
+          
+          # بررسی نصب بودن ابزارها
+          echo "Verifying installations..."
+          jq --version
+          bc --version
+          curl --version
+      
+      - name: 🔐 Validate Secrets
+        run: |
+          if [ -z "${{ secrets.DO_API_TOKEN }}" ]; then
+            echo "❌ DO_API_TOKEN is not set"
+            echo "Please go to: Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          
+          if [ -z "${{ secrets.SSH_KEY_NAME }}" ]; then
+            echo "❌ SSH_KEY_NAME is not set"
+            echo "Please go to: Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+          
+          echo "✓ All secrets are configured"
       
       - name: 🔐 Configure Environment
         run: |
-          echo "DO_API_TOKEN=${{ secrets.DO_API_TOKEN }}" > .env
-          echo "SSH_KEY_NAME=${{ secrets.SSH_KEY_NAME }}" >> .env
-          echo "DROPLET_NAME=${{ github.event.inputs.server_name }}" >> .env
-          echo "REGION=${{ github.event.inputs.region }}" >> .env
+          cat > .env << 'EOF'
+DO_API_TOKEN=${{ secrets.DO_API_TOKEN }}
+SSH_KEY_NAME=${{ secrets.SSH_KEY_NAME }}
+DROPLET_NAME=${{ github.event.inputs.server_name }}
+REGION=${{ github.event.inputs.region }}
+EOF
+          
+          # بررسی فایل .env
+          if [ ! -f ".env" ]; then
+            echo "❌ Failed to create .env file"
+            exit 1
+          fi
+          
+          echo "✓ Environment configured"
+          # نمایش تنظیمات (بدون token)
+          echo "Configuration:"
+          grep -v DO_API_TOKEN .env
       
       - name: 🚀 Create Server
+        id: create_server
         run: |
+          set -e
+          
+          echo "Starting server creation..."
+          
+          # بررسی اسکریپت
+          if [ ! -f "create-server.sh" ]; then
+            echo "❌ create-server.sh not found"
+            exit 1
+          fi
+          
+          # دادن دسترسی اجرایی
           chmod +x create-server.sh
-          ./create-server.sh
+          
+          # اجرای اسکریپت با error handling
+          if ./create-server.sh; then
+            echo "✓ Server creation completed successfully"
+          else
+            echo "❌ Server creation failed"
+            exit 1
+          fi
       
       - name: 📤 Save Server Information
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: server-info
@@ -52,47 +113,89 @@ jobs:
             .droplet_ip
             .droplet_created_at
           retention-days: 7
+          if-no-files-found: warn
       
-      - name: 📊 Summary Report
+      - name: 📊 Success Summary Report
         if: success()
         run: |
-          echo "## 🎉 سرور با موفقیت ایجاد شد!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📋 Server Information:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| مورد | مقدار |" >> $GITHUB_STEP_SUMMARY
-          echo "|------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Server ID** | \`$(cat .droplet_id)\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Server IP** | \`$(cat .droplet_ip)\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Server Name** | ${{ github.event.inputs.server_name }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Region** | ${{ github.event.inputs.region }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Specs** | 32GB RAM • 2 vCPU • 100GB SSD |" >> $GITHUB_STEP_SUMMARY
-          echo "| **OS** | Ubuntu 22.04 LTS |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🌐 Access:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**SSH:**" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
-          echo "ssh root@$(cat .droplet_ip)" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**KASM Workspace:**" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "https://$(cat .droplet_ip):443" >> $GITHUB_STEP_SUMMARY
-          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### ⏱️ Installation Note:" >> $GITHUB_STEP_SUMMARY
-          echo "**Software installation may take 5-15 minutes. Please wait...**" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 📦 Installed Software:" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ KASM Workspace (Desktop Environment)" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Node.js 20" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Python 3" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Docker" >> $GITHUB_STEP_SUMMARY
-          echo "- ✅ Git & Development Tools" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 💰 Cost:" >> $GITHUB_STEP_SUMMARY
-          echo "**Memory-Optimized 32GB:** \$250/month (\$0.347/hour)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### 🗑️ Delete Server:" >> $GITHUB_STEP_SUMMARY
-          echo "When done, use the **Delete Server** workflow to remove the server." >> $GITHUB_STEP_SUMMARY
+          {
+            echo "## 🎉 سرور با موفقیت ایجاد شد!"
+            echo ""
+            echo "### 📋 Server Information:"
+            echo ""
+            echo "| مورد | مقدار |"
+            echo "|------|-------|"
+            echo "| **Server ID** | \`$(cat .droplet_id)\` |"
+            echo "| **Server IP** | \`$(cat .droplet_ip)\` |"
+            echo "| **Server Name** | ${{ github.event.inputs.server_name }} |"
+            echo "| **Region** | ${{ github.event.inputs.region }} |"
+            echo "| **Specs** | 32GB RAM • 2 vCPU • 100GB SSD |"
+            echo "| **OS** | Ubuntu 22.04 LTS |"
+            echo ""
+            echo "### 🌐 Access:"
+            echo ""
+            echo "**SSH:**"
+            echo \'\`\`\`bash\'
+            echo "ssh root@$(cat .droplet_ip)"
+            echo \'\`\`\`\'
+            echo ""
+            echo "**KASM Workspace:**"
+            echo \'\`\`\`\'
+            echo "https://$(cat .droplet_ip):443"
+            echo "Username: admin@kasm.local"
+            echo \'\`\`\`\'
+            echo ""
+            echo "### ⏱️ Important Notes:"
+            echo "- Software installation may take 5-15 minutes"
+            echo "- You can check installation progress:"
+            echo "  \`ssh root@$(cat .droplet_ip) tail -f /var/log/kasm-install.log\`"
+            echo ""
+            echo "### 📦 Installed Software:"
+            echo "- ✅ KASM Workspace (Desktop Environment)"
+            echo "- ✅ Node.js 20"
+            echo "- ✅ Python 3"
+            echo "- ✅ Docker"
+            echo "- ✅ Git & Development Tools"
+            echo ""
+            echo "### 💰 Cost:"
+            echo "**Memory-Optimized 32GB:** \$250/month (\$0.347/hour)"
+            echo ""
+            echo "### 🗑️ Delete Server:"
+            echo "When done, use the **Delete Server** workflow to remove the server."
+          } >> $GITHUB_STEP_SUMMARY
+      
+      - name: ❌ Failure Summary Report
+        if: failure()
+        run: |
+          {
+            echo "## ❌ سرور ایجاد نشد!"
+            echo ""
+            echo "### 🔍 Troubleshooting:"
+            echo ""
+            echo "1. **Check Secrets Configuration:**"
+            echo "   - Go to: Settings → Secrets and variables → Actions"
+            echo "   - Verify DO_API_TOKEN is set"
+            echo "   - Verify SSH_KEY_NAME exists in your DigitalOcean account"
+            echo ""
+            echo "2. **Check API Token Permissions:**"
+            echo "   - Token must have: create_droplets, read_account, read_ssh_keys scopes"
+            echo ""
+            echo "3. **Check SSH Key:**"
+            echo "   - SSH key must exist in DigitalOcean"
+            echo "   - Name must match exactly (case-sensitive)"
+            echo ""
+            echo "4. **Check GitHub Actions Logs:**"
+            echo "   - Full logs available in the Actions tab"
+            echo ""
+            echo "### 📎 Debug Information:"
+            echo "- Run ID: ${{ github.run_id }}"
+            echo "- Job ID: ${{ github.job }}"
+            echo "- Timestamp: $(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+          } >> $GITHUB_STEP_SUMMARY
+      
+      - name: 🔔 Notify on Failure
+        if: failure()
+        run: |
+          echo "❌ Workflow failed!"
+          echo "Check the logs above for details."
+          exit 1
