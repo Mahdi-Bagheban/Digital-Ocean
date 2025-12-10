@@ -1,235 +1,175 @@
-name: '🚀 Create Development Server'
+name: 🚀 Create Development Server
 
 on:
   workflow_dispatch:
     inputs:
       server_name:
-        description: '💻 Droplet Name (نام سرور)'
-        required: false
-        default: 'mahdi-dev-workspace'
+        description: '📝 Server Name (نام سرور)'
+        required: true
+        default: 'dev-server'
         type: string
       region:
-        description: '🗺️ Datacenter Region (منطقه)'
-        required: false
+        description: '🌍 Region (منطقه)'
+        required: true
         default: 'fra1'
         type: choice
         options:
-          - fra1      # Frankfurt, Germany
-          - ams3      # Amsterdam, Netherlands
-          - lon1      # London, UK
-          - nyc1      # New York, USA
+          - 'fra1'  # Frankfurt
+          - 'ams3'  # Amsterdam
+          - 'lon1'  # London
+          - 'nyc1'  # New York
+          - 'sgp1'  # Singapore
 
 jobs:
   create-server:
-    name: '🚀 Creating Development Server'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    environment: production
-    
-    outputs:
-      droplet_id: ${{ steps.create.outputs.droplet_id }}
-      droplet_ip: ${{ steps.create.outputs.droplet_ip }}
     
     steps:
-      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      # 1️⃣ PREPARATION
-      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      
-      - name: '📥 Checkout Repository'
-        id: checkout
+      - name: 📥 Checkout Code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: '⏰ Set Timestamp'
-        id: timestamp
-        run: |
-          echo "START_TIME=$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> $GITHUB_OUTPUT
-          echo "START_EPOCH=$(date +%s)" >> $GITHUB_OUTPUT
-
-      - name: '📝 Log Configuration'
-        run: |
-          echo "═══════════════════════════════════════════════════════════════"
-          echo "🚀 WORKFLOW STARTED: Create Development Server"
-          echo "═══════════════════════════════════════════════════════════════"
-          echo ""
-          echo "📋 Configuration:"
-          echo "   • Server Name:     ${{ github.event.inputs.server_name }}"
-          echo "   • Region:          ${{ github.event.inputs.region }}"
-          echo "   • Workflow ID:     ${{ github.run_id }}"
-          echo "   • Attempt:         ${{ github.run_attempt }}"
-          echo "   • Timestamp:       $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
-          echo ""
       
-      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      # 2️⃣ VALIDATION
-      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      
-      - name: '🔐 Validate Required Secrets'
-        id: validate_secrets
+      - name: 🔧 Install Dependencies
         run: |
-          set -e
-          
-          echo "🔍 Validating secrets..."
-          
-          ERRORS=0
-          
+          sudo apt-get update
+          sudo apt-get install -y jq curl
+          echo "✅ Dependencies installed"
+      
+      - name: 🔍 Validate Secrets
+        run: |
           if [ -z "${{ secrets.DO_API_TOKEN }}" ]; then
-            echo "❌ ERROR: DO_API_TOKEN is not configured"
-            ERRORS=$((ERRORS + 1))
-          else
-            echo "✅ DO_API_TOKEN is configured"
+            echo "❌ DO_API_TOKEN secret not found!"
+            exit 1
           fi
           
           if [ -z "${{ secrets.SSH_KEY_NAME }}" ]; then
-            echo "❌ ERROR: SSH_KEY_NAME is not configured"
-            ERRORS=$((ERRORS + 1))
-          else
-            echo "✅ SSH_KEY_NAME is configured"
-          fi
-          
-          if [ $ERRORS -gt 0 ]; then
-            echo ""
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "❌ VALIDATION FAILED: Missing Secrets"
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo ""
-            echo "📋 Setup Instructions:"
-            echo ""
-            echo "1. Go to GitHub Settings:"
-            echo "   https://github.com/Mahdi-Bagheban/Digital-Ocean/settings/secrets/actions"
-            echo ""
-            echo "2. Add Repository Secrets:"
-            echo ""
-            echo "   Secret 1:"
-            echo "   • Name: DO_API_TOKEN"
-            echo "   • Value: dop_v1_xxxxxxxxxxxxxxxxxxxxx"
-            echo "   • Get from: https://cloud.digitalocean.com/account/api/tokens"
-            echo ""
-            echo "   Secret 2:"
-            echo "   • Name: SSH_KEY_NAME"
-            echo "   • Value: MahdiArts (your SSH key name)"
-            echo "   • Get from: https://cloud.digitalocean.com/account/security"
-            echo ""
-            echo "3. Return here and run the workflow again"
-            echo ""
+            echo "❌ SSH_KEY_NAME secret not found!"
             exit 1
           fi
           
-          echo "✅ All secrets are properly configured"
+          echo "✅ All secrets validated"
       
-      - name: '📦 Install Dependencies'
-        id: dependencies
+      - name: 🔑 Get SSH Key ID
+        id: ssh_key
         run: |
-          echo "📥 Installing system dependencies..."
+          echo "🔍 Searching for SSH key: ${{ secrets.SSH_KEY_NAME }}"
           
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq jq bc curl wget
+          response=$(curl -s -X GET \
+            -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            "https://api.digitalocean.com/v2/account/keys")
           
-          echo "✅ Dependencies installed successfully"
-          echo ""
-          echo "📋 Tool Versions:"
-          echo "   • jq:   $(jq --version)"
-          echo "   • curl: $(curl --version | head -n 1)"
-          echo "   • bc:   $(echo | bc -v 2>&1 | head -n 1)"
-      
-      - name: '📋 Verify Scripts'
-        id: verify_scripts
-        run: |
-          echo "🔍 Verifying required scripts..."
+          ssh_key_id=$(echo "$response" | jq -r ".ssh_keys[] | select(.name==\"${{ secrets.SSH_KEY_NAME }}\") | .id")
           
-          if [ ! -f "create-server.sh" ]; then
-            echo "❌ ERROR: create-server.sh not found"
-            echo "📁 Current directory: $(pwd)"
-            echo "📁 Files:"
-            ls -la
+          if [ -z "$ssh_key_id" ] || [ "$ssh_key_id" = "null" ]; then
+            echo "❌ SSH Key '${{ secrets.SSH_KEY_NAME }}' not found!"
+            echo "Available keys:"
+            echo "$response" | jq -r '.ssh_keys[] | "  - \(.name)"'
             exit 1
           fi
           
-          echo "✅ create-server.sh exists"
-          echo "📊 Script size: $(wc -l < create-server.sh) lines"
-          
-          chmod +x create-server.sh
-          echo "✅ Script is executable"
+          echo "✅ Found SSH Key ID: $ssh_key_id"
+          echo "ssh_key_id=$ssh_key_id" >> $GITHUB_OUTPUT
       
-      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      # 3️⃣ CONFIGURATION
-      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      
-      - name: '⚙️ Setup Environment'
-        id: env_setup
+      - name: 🏗️ Create Droplet
+        id: create_droplet
         run: |
-          echo "🔧 Configuring environment..."
+          echo "## 🏗️ Creating Server" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           
-          cat > .env << 'EOF'
-DO_API_TOKEN=${{ secrets.DO_API_TOKEN }}
-SSH_KEY_NAME=${{ secrets.SSH_KEY_NAME }}
-DROPLET_NAME=${{ github.event.inputs.server_name }}
-REGION=${{ github.event.inputs.region }}
-EOF
+          # Create droplet using API
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "name": "${{ github.event.inputs.server_name }}",
+              "region": "${{ github.event.inputs.region }}",
+              "size": "s-2vcpu-4gb",
+              "image": "ubuntu-22-04-x64",
+              "ssh_keys": [${{ steps.ssh_key.outputs.ssh_key_id }}],
+              "backups": false,
+              "ipv6": true,
+              "monitoring": true,
+              "tags": ["development", "github-actions"],
+              "user_data": "#!/bin/bash\nset -e\napt-get update\napt-get upgrade -y\n# Install Docker\ncurl -fsSL https://get.docker.com -o get-docker.sh\nsh get-docker.sh\nsystemctl enable docker\nsystemctl start docker\n# Install Node.js\ncurl -fsSL https://deb.nodesource.com/setup_20.x | bash -\napt-get install -y nodejs git vim htop python3 python3-pip\n# Configure firewall\nufw allow 22/tcp\nufw allow 80/tcp\nufw allow 443/tcp\nufw --force enable\necho 'Server setup complete!' > /root/setup-complete.txt"
+            }' \
+            "https://api.digitalocean.com/v2/droplets")
           
-          if [ ! -f ".env" ]; then
-            echo "❌ Failed to create .env file"
+          http_code=$(echo "$response" | tail -n1)
+          body=$(echo "$response" | head -n-1)
+          
+          if [ "$http_code" != "202" ]; then
+            echo "❌ API request failed with HTTP $http_code"
+            echo "$body" | jq '.'
+            echo "**Status:** ❌ Failed (HTTP $http_code)" >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
           
-          echo "✅ Environment configured"
-          echo ""
-          echo "📋 Configuration Summary:"
-          echo "   • DO_API_TOKEN:    ••••••••••••••••••••••••••••••••"
-          echo "   • SSH_KEY_NAME:    ${{ secrets.SSH_KEY_NAME }}"
-          echo "   • DROPLET_NAME:    ${{ github.event.inputs.server_name }}"
-          echo "   • REGION:          ${{ github.event.inputs.region }}"
+          droplet_id=$(echo "$body" | jq -r '.droplet.id')
+          echo "droplet_id=$droplet_id" >> $GITHUB_OUTPUT
+          
+          echo "✅ Droplet created with ID: $droplet_id"
+          echo "**Droplet ID:** \`$droplet_id\`" >> $GITHUB_STEP_SUMMARY
       
-      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      # 4️⃣ EXECUTION
-      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      
-      - name: '🚀 Create Development Server'
-        id: create
+      - name: ⏳ Wait for Server Activation
+        id: wait_active
         run: |
-          set -e
+          droplet_id=${{ steps.create_droplet.outputs.droplet_id }}
+          max_attempts=60
+          attempt=0
+          status=""
           
-          echo "═══════════════════════════════════════════════════════════════"
-          echo "🚀 EXECUTING: create-server.sh"
-          echo "═══════════════════════════════════════════════════════════════"
-          echo ""
+          echo "⏳ Waiting for droplet to become active..."
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ⏳ Activation Progress" >> $GITHUB_STEP_SUMMARY
           
-          ./create-server.sh
-          
-          EXIT_CODE=$?
-          
-          echo ""
-          echo "═══════════════════════════════════════════════════════════════"
-          
-          if [ $EXIT_CODE -eq 0 ]; then
-            echo "✅ Script executed successfully"
+          while [ "$status" != "active" ] && [ $attempt -lt $max_attempts ]; do
+            sleep 10
+            attempt=$((attempt + 1))
             
-            if [ -f ".droplet_id" ]; then
-              DROPLET_ID=$(cat .droplet_id)
-              echo "droplet_id=$DROPLET_ID" >> $GITHUB_OUTPUT
-              echo "   • Droplet ID: $DROPLET_ID"
-            fi
+            response=$(curl -s -X GET \
+              -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
+              "https://api.digitalocean.com/v2/droplets/$droplet_id")
             
-            if [ -f ".droplet_ip" ]; then
-              DROPLET_IP=$(cat .droplet_ip)
-              echo "droplet_ip=$DROPLET_IP" >> $GITHUB_OUTPUT
-              echo "   • Droplet IP: $DROPLET_IP"
-            fi
-          else
-            echo "❌ Script failed with exit code: $EXIT_CODE"
+            status=$(echo "$response" | jq -r '.droplet.status')
+            progress=$((attempt * 100 / max_attempts))
+            
+            echo "[⏳] Status: $status | Progress: ${progress}% | Attempt: ${attempt}/${max_attempts}"
+          done
+          
+          if [ "$status" != "active" ]; then
+            echo "❌ Droplet failed to activate within timeout"
+            echo "**Status:** ❌ Activation timeout" >> $GITHUB_STEP_SUMMARY
             exit 1
           fi
           
-          echo "═══════════════════════════════════════════════════════════════"
+          echo "✅ Droplet is now active!"
+          echo "**Status:** ✅ Active (took ${attempt}0 seconds)" >> $GITHUB_STEP_SUMMARY
       
-      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      # 5️⃣ ARTIFACTS
-      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+      - name: 📊 Get Server Information
+        id: server_info
+        run: |
+          droplet_id=${{ steps.create_droplet.outputs.droplet_id }}
+          
+          response=$(curl -s -X GET \
+            -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
+            "https://api.digitalocean.com/v2/droplets/$droplet_id")
+          
+          ipv4=$(echo "$response" | jq -r '.droplet.networks.v4[] | select(.type=="public") | .ip_address')
+          ipv6=$(echo "$response" | jq -r '.droplet.networks.v6[] | select(.type=="public") | .ip_address')
+          region=$(echo "$response" | jq -r '.droplet.region.name')
+          
+          echo "ipv4=$ipv4" >> $GITHUB_OUTPUT
+          echo "ipv6=$ipv6" >> $GITHUB_OUTPUT
+          echo "region=$region" >> $GITHUB_OUTPUT
+          
+          # Save to file for artifact
+          echo "$droplet_id" > .droplet_id
+          echo "$ipv4" > .droplet_ip
+          echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > .droplet_created_at
+          
+          echo "✅ Server information collected"
       
-      - name: '📤 Upload Artifacts'
-        id: upload
-        if: success()
+      - name: 💾 Save Server Information
         uses: actions/upload-artifact@v4
         with:
           name: server-info
@@ -237,189 +177,56 @@ EOF
             .droplet_id
             .droplet_ip
             .droplet_created_at
-          retention-days: 7
-          if-no-files-found: warn
-          compression-level: 9
+          retention-days: 30
       
-      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      # 6️⃣ REPORTING
-      # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-      
-      - name: '✅ Success Report'
-        id: success_report
+      - name: 📋 Success Summary
         if: success()
         run: |
-          DROPLET_IP=$(cat .droplet_ip 2>/dev/null || echo 'N/A')
-          DROPLET_ID=$(cat .droplet_id 2>/dev/null || echo 'N/A')
-          CREATED_AT=$(cat .droplet_created_at 2>/dev/null || echo 'N/A')
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
           
-          cat > $GITHUB_STEP_SUMMARY << 'SUMMARY'
-## 🎉 سرور با موفقیت ایجاد شد!
-
-### 📊 اطلاعات سرور
-
-| مورد | مقدار |
-|------|-------|
-SUMMARY
+          ## 🎉 سرور با موفقیت ایجاد شد!
           
-          echo "| **Droplet ID** | \`$DROPLET_ID\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Server IP** | \`$DROPLET_IP\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Server Name** | ${{ github.event.inputs.server_name }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Region** | ${{ github.event.inputs.region }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Created At** | $CREATED_AT |" >> $GITHUB_STEP_SUMMARY
+          ### 📋 اطلاعات سرور
           
-          cat >> $GITHUB_STEP_SUMMARY << 'SUMMARY'
-
-### 🔌 اتصال به سرور
-
-**SSH Connection:**
-\`\`\`bash
-SSH_KEY_PATH=~/.ssh/do-github-actions
-SSH_USER=root
-SERVER_IP=$(cat .droplet_ip)
-
-ssh -i $SSH_KEY_PATH $SSH_USER@$SERVER_IP
-\`\`\`
-
-### 🌐 KASM Workspace
-
-**Web Interface:**
-\`\`\`
-https://SERVER_IP:443
-Username: admin@kasm.local
-Password: (see installation logs)
-\`\`\`
-
-### ⏳ Installation Status
-
-⚠️ **Software installation takes 10-20 minutes after server creation.**
-
-Monitor progress:
-\`\`\`bash
-ssh root@SERVER_IP tail -f /var/log/kasm-install.log
-\`\`\`
-
-### 📦 Installed Components
-
-- ✅ KASM Workspace (Remote Desktop)
-- ✅ Docker (Container Runtime)
-- ✅ Node.js 20.x (JavaScript)
-- ✅ Python 3.x (Python)
-- ✅ Git (Version Control)
-- ✅ Development Tools
-
-### 💰 Cost Information
-
-**Memory-Optimized 32GB Droplet:**
-- Monthly: $250/month
-- Hourly: $0.347/hour
-
-### 📝 Checklist
-
-- [ ] SSH connection successful
-- [ ] Installation logs reviewed
-- [ ] Services running (docker ps)
-- [ ] KASM web interface accessible
-
-### 🗑️ Cleanup
-
-When finished, delete the server:
-\`\`\`
-GitHub Actions → Delete Development Server
-Select: yes
-Run workflow
-\`\`\`
-
----
-
-✨ Your development server is ready! 🚀
-SUMMARY
-      
-      - name: '❌ Failure Report'
-        id: failure_report
-        if: failure()
-        run: |
-          cat > $GITHUB_STEP_SUMMARY << 'SUMMARY'
-## ❌ Server Creation Failed
-
-### 🔍 Troubleshooting Steps
-
-#### 1️⃣ Check Secrets Configuration
-
-Go to: **Settings → Secrets and variables → Actions**
-
-Verify both secrets exist:
-- [ ] `DO_API_TOKEN`
-- [ ] `SSH_KEY_NAME`
-
-#### 2️⃣ Verify DigitalOcean API Token
-
-Your API token needs these permissions:
-- ✅ read (read account data)
-- ✅ write (create and manage droplets)
-
-Get it from: https://cloud.digitalocean.com/account/api/tokens
-
-#### 3️⃣ Check SSH Key in DigitalOcean
-
-Go to: https://cloud.digitalocean.com/account/security
-
-Verify the SSH key name matches your `SSH_KEY_NAME` secret (case-sensitive)
-
-#### 4️⃣ Check Account Status
-
-- [ ] Billing is active
-- [ ] No resource quotas exceeded
-- [ ] Droplet creation is allowed
-
-#### 5️⃣ Review Workflow Logs
-
-Click each failed step above to see detailed error messages.
-
-### 📚 Documentation
-
-For more help, see:
-- [Setup Guide](../../blob/main/SETUP.md)
-- [Troubleshooting](../../blob/main/TROUBLESHOOTING.md)
-- [Implementation Guide](../../blob/main/IMPLEMENTATION-GUIDE.md)
-
-### 🔧 Manual Testing
-
-Test your credentials locally:
-\`\`\`bash
-DO_API_TOKEN="your_token_here"
-SSH_KEY_NAME="your_key_name"
-
-# Test API
-curl -H "Authorization: Bearer $DO_API_TOKEN" \\
-  https://api.digitalocean.com/v2/account
-
-# List SSH keys
-curl -H "Authorization: Bearer $DO_API_TOKEN" \\
-  https://api.digitalocean.com/v2/account/keys | jq
-\`\`\`
-
----
-
-📝 Check the logs above for specific error details.
-SUMMARY
-      
-      - name: '⏰ Calculate Duration'
-        id: duration
-        if: always()
-        run: |
-          END_EPOCH=$(date +%s)
-          START_EPOCH=${{ steps.timestamp.outputs.START_EPOCH }}
-          DURATION=$((END_EPOCH - START_EPOCH))
-          MINUTES=$((DURATION / 60))
-          SECONDS=$((DURATION % 60))
+          | مورد | مقدار |
+          |------|-------|
+          | **🆔 Server ID** | `${{ steps.create_droplet.outputs.droplet_id }}` |
+          | **📝 Server Name** | `${{ github.event.inputs.server_name }}` |
+          | **🌐 IPv4** | `${{ steps.server_info.outputs.ipv4 }}` |
+          | **🌐 IPv6** | `${{ steps.server_info.outputs.ipv6 }}` |
+          | **🌍 Region** | `${{ steps.server_info.outputs.region }}` |
+          | **💻 Size** | 2 vCPU, 4GB RAM |
           
-          echo "duration=${MINUTES}m ${SECONDS}s" >> $GITHUB_OUTPUT
+          ### 🔗 دستورات اتصال
           
-          echo ""
-          echo "═══════════════════════════════════════════════════════════════"
-          echo "⏱️  WORKFLOW COMPLETED"
-          echo "═══════════════════════════════════════════════════════════════"
-          echo "Duration: ${MINUTES}m ${SECONDS}s"
-          echo "Status: ${{ job.status }}"
-          echo "═══════════════════════════════════════════════════════════════"
+          **SSH Connection:**
+          ```bash
+          ssh root@${{ steps.server_info.outputs.ipv4 }}
+          ```
+          
+          ### 📦 نرم‌افزارهای نصب شده
+          
+          - ✅ Docker
+          - ✅ Node.js 20
+          - ✅ Python 3
+          - ✅ Git
+          - ✅ Development Tools
+          
+          ### ⚠️ نکات مهم
+          
+          - 💰 هزینه سرور: $24/month ($0.036/hour)
+          - 🗑️ برای حذف سرور از workflow "Delete Development Server" استفاده کنید
+          - 🔐 اطلاعات سرور در Artifacts ذخیره شده است
+          - ⏱️ نصب نرم‌افزارها حدود 5-10 دقیقه طول می‌کشد
+          
+          ### 🎯 مراحل بعدی
+          
+          1. منتظر بمانید تا نصب نرم‌افزارها کامل شود (5-10 دقیقه)
+          2. از طریق SSH به سرور متصل شوید
+          3. بررسی کنید: `cat /root/setup-complete.txt`
+          4. پروژه خود را deploy کنید
+          
+          ---
+          
+          **✨ بسم الله الرحمن الرحیم - موفق باشید!**
+          EOF
