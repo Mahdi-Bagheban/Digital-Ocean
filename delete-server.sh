@@ -5,14 +5,17 @@
 # با محاسبه هزینه استفاده
 # توسط: Mahdi Bagheban
 # تاریخ: دسامبر 2025
+# نسخه: 2.0 (بهبود شده)
 #######################################
+
+set -o pipefail
 
 # رنگ‌ها برای نمایش بهتر
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
-NC='\033[0m' # بدون رنگ
+NC='\033[0m'
 
 # تابع چاپ پیام‌ها
 print_message() {
@@ -31,80 +34,174 @@ print_warning() {
     echo -e "${YELLOW}[!]${NC} $1"
 }
 
-# بررسی نصب بودن jq برای پردازش JSON
-if ! command -v jq &> /dev/null; then
-    print_error "jq نصب نشده است. لطفا ابتدا jq را نصب کنید:"
-    print_info "Windows: scoop install jq"
-    print_info "Linux: sudo apt-get install jq"
-    print_info "Mac: brew install jq"
+exit_error() {
+    print_error "$1"
     exit 1
-fi
+}
 
-# بررسی وجود فایل تنظیمات
-CONFIG_FILE=".env"
-if [ ! -f "$CONFIG_FILE" ]; then
-    print_error "فایل .env یافت نشد!"
-    print_info "لطفا فایل .env را با API Token ایجاد کنید"
-    exit 1
-fi
+# تابع API call با retry logic
+api_call() {
+    local method=$1
+    local endpoint=$2
+    local data=$3
+    local max_retries=3
+    local retry_count=0
+    
+    while [ $retry_count -lt $max_retries ]; do
+        local response
+        
+        if [ -z "$data" ]; then
+            response=$(curl -s -w "\n%{http_code}" \
+              -X "$method" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $DO_API_TOKEN" \
+              "https://api.digitalocean.com/v2$endpoint")
+        else
+            response=$(curl -s -w "\n%{http_code}" \
+              -X "$method" \
+              -H "Content-Type: application/json" \
+              -H "Authorization: Bearer $DO_API_TOKEN" \
+              -d "$data" \
+              "https://api.digitalocean.com/v2$endpoint")
+        fi
+        
+        local http_code=$(echo "$response" | tail -n1)
+        local body=$(echo "$response" | sed '$d')
+        
+        # بررسی موفقیت
+        if [[ "$http_code" =~ ^(200|201|204)$ ]]; then
+            echo "$body"
+            return 0
+        fi
+        
+        # Rate limiting
+        if [ "$http_code" = "429" ]; then
+            retry_count=$((retry_count + 1))
+            if [ $retry_count -lt $max_retries ]; then
+                print_warning "Rate limit - ${retry_count}/${max_retries} - منتظر 10 ثانیه..."
+                sleep 10
+                continue
+            fi
+        fi
+        
+        print_error "API Error (HTTP $http_code): $body"
+        return 1
+    done
+    
+    return 1
+}
 
-# بارگذاری متغیرها از فایل .env
-source "$CONFIG_FILE"
-
-# بررسی متغیر API Token
-if [ -z "$DO_API_TOKEN" ]; then
-    print_error "DO_API_TOKEN در فایل .env تنظیم نشده است!"
-    exit 1
-fi
-
-# بررسی وجود فایل شناسه Droplet
-if [ ! -f ".droplet_id" ]; then
-    print_error "فایل .droplet_id یافت نشد!"
-    print_info "احتمالاً سرور قبلاً حذف شده یا ایجاد نشده است"
-    exit 1
-fi
-
-DROPLET_ID=$(cat .droplet_id)
-
-print_info "=== حذف سرور از DigitalOcean ==="
-echo ""
-print_info "شناسه سرور: $DROPLET_ID"
-
-# دریافت اطلاعات Droplet قبل از حذف
-print_message "درحال دریافت اطلاعات سرور..."
-DROPLET_INFO=$(curl -s -X GET \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $DO_API_TOKEN" \
-  "https://api.digitalocean.com/v2/droplets/$DROPLET_ID")
-
-# بررسی وجود Droplet
-if echo "$DROPLET_INFO" | jq -e '.message' > /dev/null 2>&1; then
-    ERROR_MSG=$(echo "$DROPLET_INFO" | jq -r '.message')
-    if [[ "$ERROR_MSG" == *"not found"* ]]; then
-        print_warning "سرور با این شناسه وجود ندارد یا قبلاً حذف شده است"
-        print_message "پاک‌سازی فایل‌های محلی..."
-        rm -f .droplet_id .droplet_ip .droplet_created_at
-        print_message "فایل‌های محلی پاک شدند"
-        exit 0
-    else
-        print_error "خطا در دریافت اطلاعات: $ERROR_MSG"
-        exit 1
+# بررسی پیش‌نیازها
+check_prerequisites() {
+    print_info "بررسی پیش‌نیازها..."
+    
+    if ! command -v jq &> /dev/null; then
+        exit_error "jq نصب نشده است"
     fi
-fi
+    
+    if ! command -v curl &> /dev/null; then
+        exit_error "curl نصب نشده است"
+    fi
+    
+    if ! command -v bc &> /dev/null; then
+        exit_error "bc نصب نشده است"
+    fi
+    
+    print_message "تمام پیش‌نیازها موجود هستند"
+}
 
-# نمایش اطلاعات سرور
-DROPLET_NAME=$(echo "$DROPLET_INFO" | jq -r '.droplet.name')
-IPV4=$(echo "$DROPLET_INFO" | jq -r '.droplet.networks.v4[0].ip_address')
-STATUS=$(echo "$DROPLET_INFO" | jq -r '.droplet.status')
+# بررسی فایل .env
+check_env_file() {
+    CONFIG_FILE=".env"
+    if [ ! -f "$CONFIG_FILE" ]; then
+        exit_error "فایل .env یافت نشد"
+    fi
+}
 
-echo ""
-print_info "نام سرور: $DROPLET_NAME"
-print_info "آی‌پی: $IPV4"
-print_info "وضعیت: $STATUS"
-echo ""
+# بارگذاری متغیرها
+load_env() {
+    source ".env"
+    
+    if [ -z "$DO_API_TOKEN" ]; then
+        exit_error "DO_API_TOKEN در فایل .env تنظیم نشده است"
+    fi
+}
 
-# محاسبه هزینه استفاده
-if [ -f ".droplet_created_at" ]; then
+# بررسی droplet_id
+check_droplet_id() {
+    if [ ! -f ".droplet_id" ]; then
+        exit_error "فایل .droplet_id یافت نشد!
+احتمالاً سرور قبلاً حذف شده یا ایجاد نشده است"
+    fi
+}
+
+# دریافت اطلاعات Droplet
+get_droplet_info() {
+    local droplet_id=$1
+    
+    print_message "در حال دریافت اطلاعات سرور..."
+    
+    local response
+    response=$(api_call GET "/droplets/$droplet_id") || return 1
+    
+    # بررسی 404
+    if echo "$response" | jq -e '.message' > /dev/null 2>&1; then
+        ERROR_MSG=$(echo "$response" | jq -r '.message')
+        if [[ "$ERROR_MSG" == *"not found"* ]]; then
+            print_warning "سرور با این شناسه وجود ندارد یا قبلاً حذف شده است"
+            return 2  # صورت خاصی نبود
+        else
+            return 1
+        fi
+    fi
+    
+    echo "$response"
+}
+
+# حذف Droplet
+delete_droplet() {
+    local droplet_id=$1
+    
+    print_message "درحال حذف سرور..."
+    
+    # بررسی قبلی تایید
+    read -p "آیا بطور مطمئن هستید می‌خواهید این سرور را حذف کنید? (yes/no): " CONFIRM
+    
+    if [ "$CONFIRM" != "yes" ]; then
+        print_info "عملیات حذف لغو شد"
+        return 0
+    fi
+    
+    # حذف ایجاد کرد
+    local response
+    response=$(curl -s -w "\n%{http_code}" -X DELETE \
+      -H "Content-Type: application/json" \
+      -H "Authorization: Bearer $DO_API_TOKEN" \
+      "https://api.digitalocean.com/v2/droplets/$droplet_id")
+    
+    local http_code=$(echo "$response" | tail -n1)
+    
+    if [ "$http_code" = "204" ]; then
+        print_message "سرور با موفقیت حذف شد!"
+        return 0
+    elif [ "$http_code" = "404" ]; then
+        print_warning "سرور قبلاً حذف شده است"
+        return 2
+    else
+        print_error "خطا در حذف سرور (HTTP $http_code)"
+        local body=$(echo "$response" | sed '$d')
+        echo "$body" | jq '.' 2>/dev/null || echo "$body"
+        return 1
+    fi
+}
+
+# محاسبه هزینه
+calculate_cost() {
+    if [ ! -f ".droplet_created_at" ]; then
+        print_warning "فایل زمان ایجاد نشد - محاسبه هزینه امکان‌پذیر نیست"
+        return
+    fi
+    
     CREATED_AT=$(cat .droplet_created_at)
     CURRENT_TIME=$(date +%s)
     USAGE_SECONDS=$((CURRENT_TIME - CREATED_AT))
@@ -112,10 +209,11 @@ if [ -f ".droplet_created_at" ]; then
     USAGE_HOURS=$(echo "scale=2; $USAGE_SECONDS / 3600" | bc)
     USAGE_DAYS=$(echo "scale=2; $USAGE_HOURS / 24" | bc)
     
-    # قیمت Memory-Optimized 32GB: $250/ماه (30 روز) = $8.33/روز = $0.347/ساعت
+    # Memory-Optimized 32GB: $250/month = $0.347/hour
     HOURLY_RATE=0.347
     ESTIMATED_COST=$(echo "scale=2; $USAGE_HOURS * $HOURLY_RATE" | bc)
     
+    echo ""
     echo "======================================"
     print_message "اطلاعات استفاده از سرور:"
     echo "======================================"
@@ -124,55 +222,72 @@ if [ -f ".droplet_created_at" ]; then
     print_info "هزینه تقریبی: \$${ESTIMATED_COST}"
     echo "======================================"
     echo ""
-else
-    print_warning "فایل زمان ایجاد یافت نشد - محاسبه هزینه امکان‌پذیر نیست"
-    echo ""
-fi
+}
 
-# تأیید حذف
-print_warning "آیا مطمئن هستید که می‌خواهید این سرور را حذف کنید؟"
-read -p "برای ادامه 'yes' تایپ کنید: " CONFIRM
-
-if [ "$CONFIRM" != "yes" ]; then
-    print_info "عملیات حذف لغو شد"
-    exit 0
-fi
-
-# حذف Droplet
-print_message "درحال حذف سرور..."
-DELETE_RESPONSE=$(curl -s -w "%{http_code}" -X DELETE \
-  -H "Content-Type: application/json" \
-  -H "Authorization: Bearer $DO_API_TOKEN" \
-  "https://api.digitalocean.com/v2/droplets/$DROPLET_ID")
-
-HTTP_CODE="${DELETE_RESPONSE: -3}"
-
-if [ "$HTTP_CODE" = "204" ]; then
-    print_message "سرور با موفقیت حذف شد!"
-    
-    # پاک‌سازی فایل‌های محلی
-    print_message "پاک‌سازی فایل‌های محلی..."
+# پاك‌سازی فایل‌ها
+cleanup_files() {
+    print_message "پاك‌سازی فایل‌های محلی..."
     rm -f .droplet_id .droplet_ip .droplet_created_at
-    
-    print_message "تمام فایل‌های مربوط به سرور پاک شدند"
+    print_message "فایل‌های محلی پاك شدند"
+}
+
+# ===== MAIN EXECUTION =====
+main() {
+    print_info "=== شروع اسکریپت حذف سرور ==="
     echo ""
     
-    if [ ! -z "$ESTIMATED_COST" ]; then
-        print_info "هزینه نهایی شما تقریباً \$${ESTIMATED_COST} خواهد بود"
-        print_info "این مبلغ از اعتبار حساب DigitalOcean شما کسر می‌شود"
+    # مراحل شروعی
+    check_prerequisites
+    check_env_file
+    load_env
+    check_droplet_id
+    
+    DROPLET_ID=$(cat .droplet_id)
+    print_info "شناسه سرور: $DROPLET_ID"
+    echo ""
+    
+    # دریافت اطلاعات
+    DROPLET_INFO=$(get_droplet_info "$DROPLET_ID")
+    RESULT=$?
+    
+    if [ $RESULT -eq 1 ]; then
+        exit_error "خطا در دریافت اطلاعات Droplet"
     fi
     
+    if [ $RESULT -eq 2 ]; then
+        print_warning "سرور قبلاً حذف شده است"
+        cleanup_files
+        exit 0
+    fi
+    
+    # نمایش اطلاعات
+    DROPLET_NAME=$(echo "$DROPLET_INFO" | jq -r '.droplet.name')
+    IPV4=$(echo "$DROPLET_INFO" | jq -r '.droplet.networks.v4[0].ip_address')
+    STATUS=$(echo "$DROPLET_INFO" | jq -r '.droplet.status')
+    
     echo ""
-    print_message "عملیات حذف با موفقیت انجام شد!"
+    print_info "نام سرور: $DROPLET_NAME"
+    print_info "آی‌پی: $IPV4"
+    print_info "وضعیت: $STATUS"
+    echo ""
     
-elif [ "$HTTP_CODE" = "404" ]; then
-    print_warning "سرور قبلاً حذف شده است"
-    print_message "پاک‌سازی فایل‌های محلی..."
-    rm -f .droplet_id .droplet_ip .droplet_created_at
-    print_message "فایل‌های محلی پاک شدند"
+    # محاسبه هزینه
+    calculate_cost
     
-else
-    print_error "خطا در حذف سرور (کد HTTP: $HTTP_CODE)"
-    print_error "پاسخ سرور: ${DELETE_RESPONSE:0:-3}"
-    exit 1
-fi
+    # حذف
+    delete_droplet "$DROPLET_ID"
+    DELETE_RESULT=$?
+    
+    if [ $DELETE_RESULT -ne 0 ] && [ $DELETE_RESULT -ne 2 ]; then
+        exit_error "خطا در حذف سرور"
+    fi
+    
+    # پاك‌سازی
+    cleanup_files
+    
+    echo ""
+    print_message "عملیات ایجاد شام انجام شد"
+    echo ""
+}
+
+main "$@"
