@@ -2,11 +2,11 @@
 
 #######################################
 # اسکریپت ایجاد سرور توسعه در DigitalOcean
-# Memory-Optimized Premium Intel 64GB RAM
+# Memory-Optimized Premium Intel 64GB RAM (پیشفرض)
 # با KASM Workspace و RustDesk Server
 # توسط: Mahdi Bagheban
 # تاریخ: دسامبر 2025
-# نسخه: 3.0 (ارتقاء به 64GB + RustDesk)
+# نسخه: 4.0 (ورودیهای انعطافپذیر + Override support)
 #######################################
 
 set -o pipefail  # خروج از اسکریپت اگر هر دستور فشل شود
@@ -100,12 +100,29 @@ load_and_validate_env() {
         SSH_KEY_NAME="MahdiArts"
     fi
     
-    # تنظیمات پیش‌فرض Droplet (ارتقاء به 64GB)
-    DROPLET_NAME="${DROPLET_NAME:-mahdi-dev-workspace-64gb}"
-    REGION="${REGION:-fra1}"
-    SIZE="${SIZE:-m-16vcpu-64gb}"  # ارتقاء به 64GB RAM
-    IMAGE="${IMAGE:-ubuntu-24-04-x64}"  # Ubuntu 24.04 LTS
-    TAGS="${TAGS:-mahdiarts,kasm-workspace,rustdesk,development,64gb}"
+    # ===== پیشفرض‌های جدید با نویسندگی (Override) =====
+    # اگر از GitHub Actions فرستاده شده، استفاده کن؛ وگرنه پیشفرض‌ها
+    DROPLET_NAME="${DO_DROPLET_NAME:-${DROPLET_NAME:-mahdi-dev-workspace-64gb}}"
+    REGION="${DO_REGION:-${REGION:-fra1}}"
+    SIZE="${DO_SIZE_SLUG:-${SIZE:-m-16vcpu-64gb}}"
+    IMAGE="${DO_IMAGE:-${IMAGE:-ubuntu-24-04-x64}}"
+    TAGS="${DO_TAGS:-${TAGS:-mahdiarts,kasm-workspace,rustdesk,development,high-performance}}"
+    ENABLE_IPV6="${DO_ENABLE_IPV6:-${ENABLE_IPV6:-true}}"
+    ENABLE_BACKUPS="${DO_ENABLE_BACKUPS:-${ENABLE_BACKUPS:-false}}"
+    AUTO_SHUTDOWN_HOURS="${DO_AUTO_SHUTDOWN_HOURS:-${AUTO_SHUTDOWN_HOURS:-}}"
+    
+    # ارزیابی boolean
+    if [ "$ENABLE_IPV6" = "true" ] || [ "$ENABLE_IPV6" = "1" ]; then
+        ENABLE_IPV6=true
+    else
+        ENABLE_IPV6=false
+    fi
+    
+    if [ "$ENABLE_BACKUPS" = "true" ] || [ "$ENABLE_BACKUPS" = "1" ]; then
+        ENABLE_BACKUPS=true
+    else
+        ENABLE_BACKUPS=false
+    fi
 }
 
 # تابع API call با error handling
@@ -481,7 +498,7 @@ EOFSCRIPT
 
 # ایجاد Droplet
 create_droplet() {
-    print_step "در حال ایجاد Droplet با 64GB RAM..."
+    print_step "در حال ایجاد Droplet (Size: $SIZE, Region: $REGION)..."
     
     # ایجاد install script
     local install_script
@@ -499,8 +516,8 @@ create_droplet() {
     "size": "$SIZE",
     "image": "$IMAGE",
     "ssh_keys": [$SSH_KEY_ID],
-    "backups": false,
-    "ipv6": true,
+    "backups": $ENABLE_BACKUPS,
+    "ipv6": $ENABLE_IPV6,
     "monitoring": true,
     "tags": ["${TAGS//,/\",\"}"],
     "user_data": "$user_data_base64"
@@ -596,6 +613,10 @@ get_droplet_info() {
     local ipv4=$(echo "$response" | jq -r '.droplet.networks.v4[0].ip_address')
     local ipv6=$(echo "$response" | jq -r '.droplet.networks.v6[0].ip_address')
     local status=$(echo "$response" | jq -r '.droplet.status')
+    local size_slug=$(echo "$response" | jq -r '.droplet.size_slug')
+    local memory=$(echo "$response" | jq -r '.droplet.memory')
+    local vcpus=$(echo "$response" | jq -r '.droplet.vcpus')
+    local disk=$(echo "$response" | jq -r '.droplet.disk')
     
     if [ -z "$ipv4" ] || [ "$ipv4" = "null" ]; then
         print_error "خطا: IP Address دریافت نشد"
@@ -603,9 +624,47 @@ get_droplet_info() {
     fi
     
     echo "$ipv4" > .droplet_ip
+    echo "$ipv6" > .droplet_ipv6
+    echo "$size_slug" > .droplet_size
     date +%s > .droplet_created_at
     
+    # ذخیره اطلاعات به متغیرهای global برای استفاده در show_summary
+    DROPLET_IPV6="$ipv6"
+    DROPLET_SIZE_SLUG="$size_slug"
+    DROPLET_MEMORY="$memory"
+    DROPLET_VCPUS="$vcpus"
+    DROPLET_DISK="$disk"
+    
     echo "$ipv4"
+}
+
+# محاسبه هزینه تقریبی
+calculate_hourly_cost() {
+    local size=$1
+    
+    case $size in
+        "s-1vcpu-512mb") echo "0.0044" ;;
+        "s-1vcpu-1gb") echo "0.0089" ;;
+        "s-2vcpu-2gb") echo "0.0179" ;;
+        "s-2vcpu-4gb") echo "0.0357" ;;
+        "s-4vcpu-8gb") echo "0.0714" ;;
+        "s-6vcpu-16gb") echo "0.1428" ;;
+        "s-8vcpu-32gb") echo "0.2857" ;;
+        "m-16vcpu-64gb") echo "0.5952" ;;
+        "m-24vcpu-192gb") echo "1.7857" ;;
+        "m-32vcpu-256gb") echo "2.3809" ;;
+        "c-2") echo "0.0595" ;;
+        "c-4") echo "0.1190" ;;
+        "c-8") echo "0.2381" ;;
+        "c-16") echo "0.4762" ;;
+        "c-32") echo "0.9524" ;;
+        "r-2vcpu-16gb") echo "0.1191" ;;
+        "r-4vcpu-32gb") echo "0.2381" ;;
+        "r-8vcpu-64gb") echo "0.4762" ;;
+        "r-16vcpu-128gb") echo "0.9524" ;;
+        "r-32vcpu-256gb") echo "1.9048" ;;
+        *) echo "N/A" ;;
+    esac
 }
 
 # نمایش خلاصه با RustDesk
@@ -614,6 +673,10 @@ show_summary() {
     local droplet_name=$2
     local ipv4=$3
     local region=$4
+    
+    local hourly_cost=$(calculate_hourly_cost "$SIZE")
+    local daily_cost=$(echo "$hourly_cost * 24" | bc -l 2>/dev/null || echo "N/A")
+    local monthly_cost=$(echo "$hourly_cost * 730" | bc -l 2>/dev/null || echo "N/A")
     
     echo ""
     echo "=========================================="
@@ -625,13 +688,16 @@ show_summary() {
     echo "  🆔 شناسه: $droplet_id"
     echo "  📝 نام: $droplet_name"
     echo "  🌍 آی‌پی: $ipv4"
+    if [ "$DROPLET_IPV6" != "null" ] && [ -n "$DROPLET_IPV6" ]; then
+        echo "  🌐 IPv6: $DROPLET_IPV6"
+    fi
     echo "  📍 منطقه: $region"
     echo ""
     
     print_info "💪 قدرت پردازشی:"
-    echo "  🧠 RAM: 64GB DDR4"
-    echo "  🔥 CPU: 16 vCPUs (Dedicated)"
-    echo "  ⚡ SSD: 400GB NVMe"
+    echo "  🧠 RAM: ${DROPLET_MEMORY}MB"
+    echo "  🔥 CPU: $DROPLET_VCPUS vCPUs"
+    echo "  ⚡ SSD: ${DROPLET_DISK}GB NVMe"
     echo "  🌐 Transfer: 8TB"
     echo "  🚀 Network: تا 10 Gbps"
     echo ""
@@ -663,9 +729,17 @@ show_summary() {
     echo ""
     
     print_info "💰 هزینه تقریبی:"
-    echo "  ساعتی: ~$0.595/hour"
-    echo "  روزانه: ~$14.28/day"
-    echo "  ماهانه: ~$428/month"
+    if [ "$hourly_cost" != "N/A" ]; then
+        echo "  ساعتی: \$$hourly_cost/hour"
+        if [ "$daily_cost" != "N/A" ]; then
+            printf "  روزانه: \$%.2f/day\n" "$daily_cost"
+        fi
+        if [ "$monthly_cost" != "N/A" ]; then
+            printf "  ماهانه: \$%.2f/month\n" "$monthly_cost"
+        fi
+    else
+        echo "  (لطفا هزینه را از پنل DigitalOcean بررسی کنید)"
+    fi
     echo ""
     
     print_warning "⚠️  یادآوری: حتماً بعد از اتمام کار، سرور را حذف کنید!"
@@ -684,7 +758,7 @@ main() {
     echo ""
     echo "=========================================="
     echo "🚀 اسکریپت ایجاد سرور DigitalOcean"
-    echo "📦 نسخه 3.0 - 64GB RAM + RustDesk"
+    echo "📦 نسخه 4.0 - ورودیهای انعطافپذیر"
     echo "=========================================="
     echo ""
     
@@ -697,13 +771,14 @@ main() {
     print_info "⚙️  تنظیمات Droplet:"
     echo "  📝 نام: $DROPLET_NAME"
     echo "  📍 منطقه: $REGION"
-    echo "  💪 مشخصات: Memory-Optimized Premium Intel"
-    echo "  🧠 RAM: 64GB DDR4"
-    echo "  🔥 CPU: 16 vCPUs (Dedicated)"
-    echo "  ⚡ SSD: 400GB NVMe"
-    echo "  🌐 Transfer: 8TB"
-    echo "  🐧 سیستم‌عامل: Ubuntu 24.04 LTS"
-    echo "  📦 نرم‌افزار: KASM + RustDesk + Docker + Node.js + Python"
+    echo "  💾 Size Slug: $SIZE"
+    echo "  🐧 سیستم‌عامل: $IMAGE"
+    echo "  🏷️  Tags: $TAGS"
+    echo "  🌐 IPv6: $ENABLE_IPV6"
+    echo "  💾 Backups: $ENABLE_BACKUPS"
+    if [ -n "$AUTO_SHUTDOWN_HOURS" ]; then
+        echo "  ⏱️  Auto-Shutdown: پس از $AUTO_SHUTDOWN_HOURS ساعت"
+    fi
     echo ""
     
     # دریافت SSH Key
