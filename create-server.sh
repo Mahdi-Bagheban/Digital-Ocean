@@ -104,8 +104,7 @@ load_and_validate_env() {
     # اگر از GitHub Actions فرستاده شده، استفاده کن؛ وگرنه پیشفرض‌ها
     DROPLET_NAME="${DO_DROPLET_NAME:-${DROPLET_NAME:-mahdi-dev-workspace-64gb}}"
     REGION="${DO_REGION:-${REGION:-fra1}}"
-    SIZE="${DO_SIZE_SLUG:-${SIZE:-m-16vcpu-64gb}}"
-    IMAGE="${DO_IMAGE:-${IMAGE:-ubuntu-24-04-x64}}"
+    SIZE="${DO_SIZE_SLUG:-${SIZE:-m-8vcpu-64gb}}"    IMAGE="${DO_IMAGE:-${IMAGE:-ubuntu-24-04-x64}}"
     TAGS="${DO_TAGS:-${TAGS:-mahdiarts,kasm-workspace,rustdesk,development,high-performance}}"
     ENABLE_IPV6="${DO_ENABLE_IPV6:-${ENABLE_IPV6:-true}}"
     ENABLE_BACKUPS="${DO_ENABLE_BACKUPS:-${ENABLE_BACKUPS:-false}}"
