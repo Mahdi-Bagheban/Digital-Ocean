@@ -124,7 +124,7 @@ load_environment() {
     # تعيين مقادير پيشفرض
     DROPLET_NAME="${DO_DROPLET_NAME:-${DROPLET_NAME:-mahdi-dev-workspace-64gb}}"
     REGION="${DO_REGION:-${REGION:-fra1}}"
-    SIZE="${DO_SIZE_SLUG:-${SIZE:-m-8vcpu-64gb}}"
+    SIZE="${DO_SIZE_SLUG:-${SIZE:-s-4vcpu-8gb}}"
     IMAGE="${DO_IMAGE:-${IMAGE:-ubuntu-24-04-x64}}"
     TAGS="${DO_TAGS:-${TAGS:-github-actions,development,kasm,rustdesk}}"
     
@@ -386,7 +386,7 @@ calculate_hourly_cost() {
     case $size in
         "s-2vcpu-4gb")     echo "0.0357" ;;
         "s-4vcpu-8gb")     echo "0.0714" ;;
-        "m-8vcpu-64gb")    echo "0.5952" ;;
+        "s-4vcpu-8gb")    echo "0.5952" ;;
         "m-16vcpu-128gb")  echo "1.1904" ;;
         "m-24vcpu-192gb")  echo "1.7857" ;;
         "m-32vcpu-256gb")  echo "2.3809" ;;
