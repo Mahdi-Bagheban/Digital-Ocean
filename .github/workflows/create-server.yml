@@ -23,18 +23,15 @@ on:
       size_slug:
         description: '💻 Server Size/Plan (پلن سرور)'
         required: true
-        default: 'm-16vcpu-64gb'
-        type: choice
-        options:
-          - 'm-16vcpu-64gb'        # 16 vCPU, 64GB RAM, 400GB SSD
-          - 'm-24vcpu-192gb'       # 24 vCPU, 192GB RAM, 500GB SSD
-          - 'm-32vcpu-256gb'       # 32 vCPU, 256GB RAM, 640GB SSD
-          - 'c-16'                 # 16 vCPU CPU-Optimized
-          - 'c-32'                 # 32 vCPU CPU-Optimized
-          - 'r-16vcpu-128gb'       # 16 vCPU, 128GB RAM, Memory-Optimized
-          - 'r-32vcpu-256gb'       # 32 vCPU, 256GB RAM, Memory-Optimized
-          - 's-2vcpu-4gb'          # 2 vCPU, 4GB RAM (Testing)
-          - 's-4vcpu-8gb'          # 4 vCPU, 8GB RAM (Testing)
+      default: 'm-8vcpu-64gb'
+      type: choice
+      options:
+        - 'm-8vcpu-64gb'  # 8 vCPU, 64GB RAM, 200GB SSD
+        - 'm-16vcpu-128gb' # 16 vCPU, 128GB RAM, 400GB SSD
+                  - 'm-24vcpu-192gb' # 24 vCPU, 192GB RAM, 600GB SSD
+        - 'm-32vcpu-256gb' # 32 vCPU, 256GB RAM, 800GB SSD
+        - 's-2vcpu-4gb'    # 2 vCPU, 4GB RAM (Testing)
+        - 's-4vcpu-8gb'    # 4 vCPU, 8GB RAM (Testing)
       enable_ipv6:
         description: '🌐 Enable IPv6 (فعال‌سازی IPv6)'
         required: false
