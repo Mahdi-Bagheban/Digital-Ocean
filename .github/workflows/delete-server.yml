@@ -1,153 +1,161 @@
-name: 🗑️ Delete Development Server
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║           🗑️ DigitalOcean Server Deletion Workflow v5.2               ║
+# ║                                                                           ║
+# ║  📝 Purpose:  حذف امن و کنترل‌شده سرورهای DigitalOcean              ║
+# ║  🌟 Version:  5.2 (Production Ready)                                  ║
+# ║  👤 Author:   Mahdi Bagheban                                           ║
+# ║  📅 Date:     December 2025                                            ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+name: 🗑️ Delete DigitalOcean Server
 
 on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: '⚠️ Type "yes" to confirm deletion (برای تایید "yes" تایپ کنید)'
+        description: '⚠️ برای تایید حذف، "yes" تایپ کنید | Type "yes" to confirm'
         required: true
         default: 'no'
         type: choice
         options:
           - 'no'
           - 'yes'
+
       server_name:
-        description: '📛 Server name to delete (نام سرور برای حذف)'
-        required: false
-        default: 'dev-server'
+        description: '📛 نام سرور برای حذف | Server name to delete'
+        required: true
+        default: 'mahdi-dev-workspace'
+        type: string
 
 jobs:
-  delete-server:
+  delete:
+    name: 🗑️ Delete Server
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 10
+
     steps:
-      - name: ⚡ Confirmation Check
+      - name: ⚠️ Confirmation Check
         if: github.event.inputs.confirm != 'yes'
         run: |
-          echo "❌ Deletion cancelled. You must select 'yes' to confirm."
+          echo "❌ حذف لغو شد. برای حذف باید مقدار confirm را 'yes' تنظیم کنید."
           exit 1
-      
-      - name: 🔧 Install Dependencies
+
+      - name: 🔧 Install Tools
         run: |
-          sudo apt-get update
-          sudo apt-get install -y jq curl
-      
-      - name: 🔍 Find and Delete Server
+          sudo apt-get update -qq
+          sudo apt-get install -y jq curl 2>&1 | tail -1
+
+      - name: 🔐 Validate Secret
+        run: |
+          if [ -z "${{ secrets.DO_API_TOKEN }}" ]; then
+            echo "❌ DO_API_TOKEN تنظیم نشده است"
+            exit 1
+          fi
+          echo "✅ DO_API_TOKEN معتبر است"
+
+      - name: 🔍 Find Droplet
+        id: find
         env:
           DO_API_TOKEN: ${{ secrets.DO_API_TOKEN }}
-          SERVER_NAME: ${{ github.event.inputs.server_name }}
+          TARGET_NAME: ${{ github.event.inputs.server_name }}
         run: |
-          echo "🔎 جستجوی سرور با نام: $SERVER_NAME"
+          echo "🔎 جستجوی سرور با نام: $TARGET_NAME"
           
-          # Get all droplets
-          response=$(curl -s -X GET \
-            -H "Authorization: Bearer $DO_API_TOKEN" \
-            -H "Content-Type: application/json" \
+          data=$(curl -s -H "Authorization: Bearer $DO_API_TOKEN" \
             "https://api.digitalocean.com/v2/droplets")
           
-          # Find droplet ID by name
-          droplet_id=$(echo "$response" | jq -r ".droplets[] | select(.name == \"$SERVER_NAME\") | .id")
+          droplet_id=$(echo "$data" | jq -r ".droplets[] | select(.name==\"$TARGET_NAME\") | .id" | head -1)
           
-          if [ -z "$droplet_id" ] || [ "$droplet_id" == "null" ]; then
-            echo "❌ سرور با نام '$SERVER_NAME' یافت نشد"
-            echo "::warning::No server found with name '$SERVER_NAME'"
-            
+          if [ -z "$droplet_id" ] || [ "$droplet_id" = "null" ]; then
+            echo "❌ هیچ سروری با نام '$TARGET_NAME' یافت نشد"
             echo "📋 لیست سرورهای موجود:"
-            echo "$response" | jq -r '.droplets[] | "  - \(.name) (ID: \(.id))"'
-            
+            echo "$data" | jq -r '.droplets[] | "  • \(.name) (ID: \(.id))"'
             exit 1
           fi
           
-          echo "✅ سرور یافت شد!"
-          echo "🆔 Droplet ID: $droplet_id"
+          ip=$(echo "$data" | jq -r ".droplets[] | select(.id==$droplet_id) | .networks.v4[] | select(.type==\"public\") | .ip_address" | head -1)
+          size=$(echo "$data" | jq -r ".droplets[] | select(.id==$droplet_id) | .size_slug")
+          region=$(echo "$data" | jq -r ".droplets[] | select(.id==$droplet_id) | .region.slug")
+          created=$(echo "$data" | jq -r ".droplets[] | select(.id==$droplet_id) | .created_at")
           
-          # Get server info before deletion
-          server_info=$(echo "$response" | jq -r ".droplets[] | select(.id == $droplet_id)")
-          server_ip=$(echo "$server_info" | jq -r '.networks.v4[0].ip_address // "N/A"')
-          server_region=$(echo "$server_info" | jq -r '.region.name // "N/A"')
-          server_size=$(echo "$server_info" | jq -r '.size_slug // "N/A"')
-          server_created=$(echo "$server_info" | jq -r '.created_at // "N/A"')
-          
-          echo "📊 اطلاعات سرور قبل از حذف:"
-          echo "  - نام: $SERVER_NAME"
-          echo "  - IP: $server_ip"
-          echo "  - منطقه: $server_region"
-          echo "  - اندازه: $server_size"
-          echo "  - تاریخ ساخت: $server_created"
-          
-          # Save to outputs
           echo "droplet_id=$droplet_id" >> $GITHUB_OUTPUT
-          echo "server_ip=$server_ip" >> $GITHUB_OUTPUT
-          echo "server_region=$server_region" >> $GITHUB_OUTPUT
+          echo "ip=$ip" >> $GITHUB_OUTPUT
+          echo "size=$size" >> $GITHUB_OUTPUT
+          echo "region=$region" >> $GITHUB_OUTPUT
+          echo "created=$created" >> $GITHUB_OUTPUT
           
-          echo ""
-          echo "🗑️ در حال حذف سرور..."
+          echo "✅ سرور یافت شد: ID=$droplet_id, IP=$ip"
+
+      - name: 🗑️ Delete Droplet
+        id: delete
+        env:
+          DO_API_TOKEN: ${{ secrets.DO_API_TOKEN }}
+        run: |
+          id="${{ steps.find.outputs.droplet_id }}"
+          echo "🗑️ در حال حذف Droplet با ID: $id"
           
-          # Delete droplet
-          http_code=$(curl -s -o /tmp/delete_response.json -w "%{http_code}" -X DELETE \
+          code=$(curl -s -o /tmp/resp.json -w "%{http_code}" -X DELETE \
             -H "Authorization: Bearer $DO_API_TOKEN" \
-            -H "Content-Type: application/json" \
-            "https://api.digitalocean.com/v2/droplets/$droplet_id")
+            "https://api.digitalocean.com/v2/droplets/$id")
           
-          if [ "$http_code" == "204" ]; then
-            echo "✅ سرور با موفقیت حذف شد!"
-            echo "🆔 Droplet ID: $droplet_id حذف شد"
+          if [ "$code" = "204" ]; then
+            echo "✅ سرور با موفقیت حذف شد"
           else
-            echo "❌ خطا در حذف سرور!"
-            echo "HTTP Status Code: $http_code"
-            cat /tmp/delete_response.json
+            echo "❌ خطا در حذف (HTTP $code)"
+            cat /tmp/resp.json
             exit 1
           fi
-      
-      - name: 📊 Success Summary
+
+      - name: 📋 Success Summary
         if: success()
         run: |
           cat >> $GITHUB_STEP_SUMMARY << 'EOF'
-          ## ✅ سرور با موفقیت حذف شد
+          # ✅ سرور با موفقیت حذف شد
           
-          ### 🗑️ اطلاعات سرور حذف شده
+          ## 📛 اطلاعات سرور حذف‌شده
           
           | مورد | مقدار |
           |------|-------|
-          | 📛 نام سرور | ${{ github.event.inputs.server_name }} |
-          | 🆔 Droplet ID | حذف شد |
-          | 🌍 منطقه | DigitalOcean |
+          | 📝 نام سرور | `${{ github.event.inputs.server_name }}` |
+          | 🆔 Droplet ID | `${{ steps.find.outputs.droplet_id }}` |
+          | 🌍 منطقه | `${{ steps.find.outputs.region }}` |
+          | 💻 پلن | `${{ steps.find.outputs.size }}` |
+          | 🌐 IP | `${{ steps.find.outputs.ip }}` |
+          | 📆 تاریخ ایجاد | `${{ steps.find.outputs.created }}` |
           
-          ### 💰 هزینه‌ها
+          ## 💰 هزینه
           
-          سرور شما با موفقیت از DigitalOcean حذف شد و دیگر هزینه‌ای دریافت نخواهید کرد.
+          - 💳 از این لحظه به بعد هزینه‌ای برای این سرور محاسبه نمی‌شود
+          - 📊 می‌توانید هزینه نهایی را در داشبورد DigitalOcean ببینید
           
-          💳 **هزینه نهایی** بر اساس مدت زمان استفاده محاسبه می‌شود.
+          ## 🔁 مراحل بعدی
           
-          ### 📌 مراحل بعدی
-          
-          - ✅ سرور حذف شد و دیگر فعال نیست
-          - 💵 هزینه‌های نهایی در داشبورد DigitalOcean قابل مشاهده است
-          - 🔄 برای ساخت سرور جدید از workflow "Create Development Server" استفاده کنید
+          - در صورت نیاز می‌توانید دوباره از Workflow ایجاد سرور استفاده کنید
+          - پیشنهاد می‌شود در صورت عدم نیاز، Volumes یا Snapshots اضافی را نیز بررسی کنید
           
           ---
-          
-          🎉 **عملیات حذف با موفقیت تکمیل شد!**
+          🎉 **عملیات حذف با موفقیت انجام شد.**
           EOF
-      
-      - name: 📊 Failure Summary
+
+      - name: ❌ Failure Summary
         if: failure()
         run: |
           cat >> $GITHUB_STEP_SUMMARY << 'EOF'
-          ## ❌ خطا در حذف سرور
+          # ❌ خطا در حذف سرور
           
-          متاسفانه عملیات حذف سرور با خطا مواجه شد.
+          متاسفانه عملیات حذف با خطا مواجه شد.
           
-          ### 🔍 بررسی‌های پیشنهادی:
+          ## 🔍 مواردی که باید بررسی شوند
           
-          1. ✅ مطمئن شوید سروری با نام مشخص شده وجود دارد
-          2. ✅ بررسی کنید که API Token معتبر است
-          3. ✅ لیست سرورهای موجود را در لاگ بالا مشاهده کنید
+          1. آیا نام سرور را درست وارد کرده‌اید؟
+          2. آیا DO_API_TOKEN معتبر است؟
+          3. آیا سرور قبلاً به صورت دستی حذف نشده است؟
           
-          ### 🛠️ راه‌حل‌ها:
+          ## 🛠️ پیشنهادها
           
-          - لیست سرورهای موجود در لاگ بالا نمایش داده شده است
-          - می‌توانید با نام صحیح سرور، workflow را مجدداً اجرا کنید
-          - یا از داشبورد DigitalOcean سرور را به‌صورت دستی حذف کنید
+          - لاگ‌های این Job را با دقت بررسی کنید
+          - در صورت نیاز می‌توانید سرور را از پنل DigitalOcean به صورت دستی حذف کنید
           
+          ---
+          برای کمک بیشتر می‌توانید در بخش Issues این ریپو سوال خود را مطرح کنید.
           EOF
