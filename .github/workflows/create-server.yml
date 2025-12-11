@@ -6,7 +6,7 @@ on:
       server_name:
         description: '📝 Server Name (نام سرور)'
         required: true
-        default: 'dev-server'
+        default: 'mahdi-dev-workspace-64gb'
         type: string
       region:
         description: '🌍 Region (منطقه)'
@@ -14,11 +14,47 @@ on:
         default: 'fra1'
         type: choice
         options:
-          - 'fra1'  # Frankfurt
-          - 'ams3'  # Amsterdam
-          - 'lon1'  # London
-          - 'nyc1'  # New York
+          - 'fra1'  # Frankfurt, Germany
+          - 'ams3'  # Amsterdam, Netherlands
+          - 'lon1'  # London, UK
+          - 'nyc1'  # New York, USA
+          - 'sfo3'  # San Francisco, USA
           - 'sgp1'  # Singapore
+      size_slug:
+        description: '💻 Server Size/Plan (پلن سرور)'
+        required: true
+        default: 'm-16vcpu-64gb'
+        type: choice
+        options:
+          - 'm-16vcpu-64gb'        # 16 vCPU, 64GB RAM, 400GB SSD
+          - 'm-24vcpu-192gb'       # 24 vCPU, 192GB RAM, 500GB SSD
+          - 'm-32vcpu-256gb'       # 32 vCPU, 256GB RAM, 640GB SSD
+          - 'c-16'                 # 16 vCPU CPU-Optimized
+          - 'c-32'                 # 32 vCPU CPU-Optimized
+          - 'r-16vcpu-128gb'       # 16 vCPU, 128GB RAM, Memory-Optimized
+          - 'r-32vcpu-256gb'       # 32 vCPU, 256GB RAM, Memory-Optimized
+          - 's-2vcpu-4gb'          # 2 vCPU, 4GB RAM (Testing)
+          - 's-4vcpu-8gb'          # 4 vCPU, 8GB RAM (Testing)
+      enable_ipv6:
+        description: '🌐 Enable IPv6 (فعال‌سازی IPv6)'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      enable_backups:
+        description: '💾 Enable Backups (فعال‌سازی پشتیبان‌گیری)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+      custom_tags:
+        description: '🏷️  Custom Tags (برچسب‌های سفارشی - جدا با کاما)'
+        required: false
+        type: string
 
 jobs:
   create-server:
@@ -30,8 +66,8 @@ jobs:
       
       - name: 🔧 Install Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y jq curl
+          sudo apt-get update -qq
+          sudo apt-get install -y jq curl bc
           echo "✅ Dependencies installed"
       
       - name: 🔍 Validate Secrets
@@ -63,7 +99,7 @@ jobs:
           if [ -z "$ssh_key_id" ] || [ "$ssh_key_id" = "null" ]; then
             echo "❌ SSH Key '${{ secrets.SSH_KEY_NAME }}' not found!"
             echo "Available keys:"
-            echo "$response" | jq -r '.ssh_keys[] | "  - \(.name)"'
+            echo "$response" | jq -r '.ssh_keys[] | "  - \(.name) (ID: \(.id))"'
             exit 1
           fi
           
@@ -72,42 +108,47 @@ jobs:
       
       - name: 🏗️ Create Droplet
         id: create_droplet
+        env:
+          DO_DROPLET_NAME: ${{ github.event.inputs.server_name }}
+          DO_REGION: ${{ github.event.inputs.region }}
+          DO_SIZE_SLUG: ${{ github.event.inputs.size_slug }}
+          DO_ENABLE_IPV6: ${{ github.event.inputs.enable_ipv6 }}
+          DO_ENABLE_BACKUPS: ${{ github.event.inputs.enable_backups }}
+          DO_TAGS: ${{ github.event.inputs.custom_tags }}
+          DO_API_TOKEN: ${{ secrets.DO_API_TOKEN }}
+          SSH_KEY_NAME: ${{ secrets.SSH_KEY_NAME }}
         run: |
           echo "## 🏗️ Creating Server" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Configuration | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Name** | \`${{ github.event.inputs.server_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Region** | \`${{ github.event.inputs.region }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Size** | \`${{ github.event.inputs.size_slug }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **IPv6** | ${{ github.event.inputs.enable_ipv6 }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Backups** | ${{ github.event.inputs.enable_backups }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Create droplet using API
-          response=$(curl -s -w "\n%{http_code}" -X POST \
+          # چک کردن size در DigitalOcean
+          response=$(curl -s -X GET \
             -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            -d '{
-              "name": "${{ github.event.inputs.server_name }}",
-              "region": "${{ github.event.inputs.region }}",
-              "size": "s-2vcpu-4gb",
-              "image": "ubuntu-22-04-x64",
-              "ssh_keys": [${{ steps.ssh_key.outputs.ssh_key_id }}],
-              "backups": false,
-              "ipv6": true,
-              "monitoring": true,
-              "tags": ["development", "github-actions"]
-            }' \
-            "https://api.digitalocean.com/v2/droplets")
+            "https://api.digitalocean.com/v2/sizes?regions=${{ github.event.inputs.region }}")
           
-          http_code=$(echo "$response" | tail -n1)
-          body=$(echo "$response" | head -n-1)
+          size_available=$(echo "$response" | jq -r ".sizes[] | select(.slug==\"${{ github.event.inputs.size_slug }}\") | .available")
           
-          if [ "$http_code" != "202" ]; then
-            echo "❌ API request failed with HTTP $http_code"
-            echo "$body" | jq '.'
-            echo "**Status:** ❌ Failed (HTTP $http_code)" >> $GITHUB_STEP_SUMMARY
-            exit 1
+          if [ "$size_available" != "true" ]; then
+            echo "⚠️  Warning: Size may not be available in this region"
+            echo "**Warning:** Size may not be available in region" >> $GITHUB_STEP_SUMMARY
           fi
           
-          droplet_id=$(echo "$body" | jq -r '.droplet.id')
-          echo "droplet_id=$droplet_id" >> $GITHUB_OUTPUT
+          # اجرای script create-server.sh
+          bash ./create-server.sh
           
-          echo "✅ Droplet created with ID: $droplet_id"
-          echo "**Droplet ID:** \`$droplet_id\`" >> $GITHUB_STEP_SUMMARY
+          # خواندن Droplet ID
+          if [ -f ".droplet_id" ]; then
+            droplet_id=$(cat .droplet_id)
+            echo "droplet_id=$droplet_id" >> $GITHUB_OUTPUT
+          fi
       
       - name: ⏳ Wait for Server Activation
         id: wait_active
@@ -155,16 +196,26 @@ jobs:
           
           ipv4=$(echo "$response" | jq -r '.droplet.networks.v4[] | select(.type=="public") | .ip_address')
           ipv6=$(echo "$response" | jq -r '.droplet.networks.v6[] | select(.type=="public") | .ip_address')
-          region=$(echo "$response" | jq -r '.droplet.region.name')
+          region=$(echo "$response" | jq -r '.droplet.region.slug')
+          size_slug=$(echo "$response" | jq -r '.droplet.size_slug')
+          memory=$(echo "$response" | jq -r '.droplet.memory')
+          vcpus=$(echo "$response" | jq -r '.droplet.vcpus')
+          disk=$(echo "$response" | jq -r '.droplet.disk')
           
           echo "ipv4=$ipv4" >> $GITHUB_OUTPUT
           echo "ipv6=$ipv6" >> $GITHUB_OUTPUT
           echo "region=$region" >> $GITHUB_OUTPUT
+          echo "size_slug=$size_slug" >> $GITHUB_OUTPUT
+          echo "memory=$memory" >> $GITHUB_OUTPUT
+          echo "vcpus=$vcpus" >> $GITHUB_OUTPUT
+          echo "disk=$disk" >> $GITHUB_OUTPUT
           
           # Save to file for artifact
           echo "$droplet_id" > .droplet_id
           echo "$ipv4" > .droplet_ip
-          echo "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" > .droplet_created_at
+          echo "$ipv6" > .droplet_ipv6
+          echo "$size_slug" > .droplet_size
+          echo "$(date -u +\"%Y-%m-%dT%H:%M:%SZ\")" > .droplet_created_at
           
           echo "✅ Server information collected"
       
@@ -175,6 +226,8 @@ jobs:
           path: |
             .droplet_id
             .droplet_ip
+            .droplet_ipv6
+            .droplet_size
             .droplet_created_at
           retention-days: 30
       
@@ -194,7 +247,10 @@ jobs:
           | **🌐 IPv4** | `${{ steps.server_info.outputs.ipv4 }}` |
           | **🌐 IPv6** | `${{ steps.server_info.outputs.ipv6 }}` |
           | **🌍 Region** | `${{ steps.server_info.outputs.region }}` |
-          | **💻 Size** | 2 vCPU, 4GB RAM |
+          | **💻 Plan** | `${{ github.event.inputs.size_slug }}` |
+          | **🧠 RAM** | `${{ steps.server_info.outputs.memory }}MB` |
+          | **🔥 vCPU** | `${{ steps.server_info.outputs.vcpus }}` |
+          | **⚡ Disk** | `${{ steps.server_info.outputs.disk }}GB` |
           
           ### 🔗 دستورات اتصال
           
@@ -203,20 +259,55 @@ jobs:
           ssh root@${{ steps.server_info.outputs.ipv4 }}
           ```
           
+          **KASM Workspace (دسکتاپ در مرورگر):**
+          ```
+          https://${{ steps.server_info.outputs.ipv4 }}:443
+          ```
+          
+          **RustDesk Server (دسترسی از راه دور):**
+          ```
+          Server: ${{ steps.server_info.outputs.ipv4 }}
+          Ports: 21115-21119
+          ```
+          
+          برای دریافت کلید عمومی:
+          ```bash
+          ssh root@${{ steps.server_info.outputs.ipv4 }} cat /root/rustdesk-public-key.txt
+          ```
+          
           ### ⚠️ نکات مهم
           
-          - 💰 هزینه سرور: $24/month ($0.036/hour)
-          - 🗑️ برای حذف سرور از workflow "Delete Development Server" استفاده کنید
-          - 🔐 اطلاعات سرور در Artifacts ذخیره شده است
-          - ⏱️ سرور آماده استفاده است - نرم‌افزارها در نسخه بعد اضافه می‌شوند
+          - 💰 **برای حذف سرور** از workflow "Delete Development Server" استفاده کنید
+          - 🔐 **اطلاعات سرور** در Artifacts ذخیره شده است
+          - ⏱️ **نصب نرم‌افزارها** ۵-۲۰ دقیقه طول می‌کشد
+          - 📊 **مشاهده لاگ نصب:** `ssh root@${{ steps.server_info.outputs.ipv4 }} tail -f /var/log/server-install.log`
+          - 📋 **اطلاعات کامل سرور:** `ssh root@${{ steps.server_info.outputs.ipv4 }} /root/server-info.sh`
           
           ### 🎯 مراحل بعدی
           
           1. از طریق SSH به سرور متصل شوید
-          2. نرم‌افزارهای مورد نیاز را نصب کنید
+          2. نرم‌افزارهای مورد نیاز را استفاده کنید
           3. پروژه خود را deploy کنید
+          4. **بعد از اتمام کار، سرور را حذف کنید** (تا هزینه نشود)
           
           ---
           
           **✨ بسم الله الرحمن الرحیم - موفق باشید!**
+          EOF
+      
+      - name: ❌ Error Notification
+        if: failure()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          
+          ## ❌ خطا در ایجاد سرور
+          
+          لطفا موارد زیر را بررسی کنید:
+          
+          - ✅ API Token معتبر است
+          - ✅ SSH Key موجود است
+          - ✅ منطقه انتخابی پلان را پشتیبانی می‌کند
+          - ✅ حد سرور شما برای DigitalOcean فعال است
+          
+          برای جزئیات بیشتر، لاگ‌های Workflow را بررسی کنید.
           EOF
