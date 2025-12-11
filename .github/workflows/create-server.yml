@@ -1,189 +1,280 @@
-# ═══════════════════════════════════════════════════════════════════════════════
-# 🚀 DigitalOcean Server Automation Workflow
-# ═══════════════════════════════════════════════════════════════════════════════
-#
-# 📝 Purpose: اتوماسیون کامل ایجاد و مدیریت سرورهای DigitalOcean
-# 🎯 Features: KASM Workspace + RustDesk Server + Full Automation
-# 👤 Author: Mahdi Bagheban
-# 📅 Updated: December 2025
-# 🔖 Version: 8.0 (Production Ready - MahdiArts Edition)
-#
-# ═══════════════════════════════════════════════════════════════════════════════
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║         🚀 DigitalOcean Server Creation Workflow v5.2                ║
+# ║                                                                           ║
+# ║  📝 Purpose:  خودکار‌سازی کامل ایجاد سرور‌های DigitalOcean       ║
+# ║  🌟 Version:  5.2 (Production Ready)                                  ║
+# ║  🎉 Features:  Validation, Health Check, Cost Estimation          ║
+# ║  👤 Author:    Mahdi Bagheban                                       ║
+# ║  📅 Date:      December 2025                                        ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
 
-name: 🚀 ایجاد سرور DigitalOcean | Create Server
+name: 🚀 Create DigitalOcean Server
 
 on:
   workflow_dispatch:
     inputs:
-      # ════════════════════════════════════════════════════════════════════
-      # 📝 بخش اول: مشخصات اصلی سرور
-      # ════════════════════════════════════════════════════════════════════
-      
       server_name:
         description: '📝 نام سرور | Server Name'
         required: true
-        default: 'MahdiArts'
+        default: 'mahdi-dev-workspace'
         type: string
-      
+
       region:
-        description: '🌍 منطقه جغرافیایی | Region'
+        description: '🌍 منطقه | Region (🚀 fra1 بهترین برای ایران)'
         required: true
         default: 'fra1'
         type: choice
         options:
-                    - 'fra1 - 🌐 Frankfurt (بهترین برای ایران)'
-                      - 'ams3 - 🌐 Amsterdam (هلند)'
-                      - 'lon1 - 🌐 London (انگلیس)'
-                      - 'nyc1 - 🌐 New York (نیویورک)'
-                      - 'sfo3 - 🌐 San Francisco (کالیفرنیا)'
-                      - 'sgp1 - 🌐 Singapore (آسیا)'
+          - fra1
+          - ams3
+          - lon1
+          - nyc1
+          - sfo3
+          - sgp1
+
       size_slug:
-        description: '💻 پلن سرور | Server Plan'
+        description: '💪 پلن سرور | Server Plan'
         required: true
-        default: 's-4vcpu-8gb-intel'
+        default: 'm-8vcpu-64gb'
         type: choice
         options:
-                    - '💼 s-2vcpu-4gb-intel - معمولی: 2 CPU, 4GB RAM ($26/mo)'
-                              - '🚀 s-4vcpu-8gb-intel - قدرتمند: 4 CPU, 8GB RAM ($52/mo)'
-                                        - '💪 m-2vcpu-16gb-intel - خیلی قدرتمند: 2 CPU, 16GB RAM ($98/mo)'
-                                                  - '⚡ m-8vcpu-64gb-intel - فوق‌العاده: 8 CPU, 64GB RAM ($435/mo)'
-                                                            - '🔥 m-32vcpu-256gb-intel - حرفه‌ای: 32 CPU, 256GB RAM ($1740/mo)'
+          - s-2vcpu-4gb
+          - s-4vcpu-8gb
+          - m-8vcpu-64gb
+          - m-16vcpu-128gb
+          - m-24vcpu-192gb
+          - m-32vcpu-256gb
+
+      enable_ipv6:
+        description: '🌐 فعال‌سازی IPv6 | Enable IPv6'
+        required: false
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+      enable_backups:
+        description: '💾 فعال‌سازی نیربه | Enable Backups (Extra Cost)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+      custom_tags:
+        description: '🏷️ برچسب‌های سفارشی | Custom Tags (comma-separated)'
+        required: false
+        default: 'github-actions,development'
+        type: string
 
 jobs:
-  create-server:
-    name: 🏗️ ایجاد سرور
+  validate:
+    name: ✅ Validate & Prepare
     runs-on: ubuntu-latest
-    
+    timeout-minutes: 5
+    outputs:
+      ssh_key_id: ${{ steps.get_ssh_key.outputs.ssh_key_id }}
+      monthly_cost: ${{ steps.calc_cost.outputs.monthly }}
+
     steps:
-      # ════════════════════════════════════════════════════════════════════
-      # 📥 Step 1: Checkout Repository
-      # ════════════════════════════════════════════════════════════════════
-      - name: 📥 Checkout Repository
+      - name: 📥 Checkout
         uses: actions/checkout@v4
-      
-      # ════════════════════════════════════════════════════════════════════
-      # 🔧 Step 2: نصب Dependencies
-      # ════════════════════════════════════════════════════════════════════
-      - name: 🔧 نصب Dependencies
+        with:
+          fetch-depth: 1
+
+      - name: ✅ Validate Secrets
+        run: |
+          echo "🔍 Validating secrets..."
+          [ -n "${{ secrets.DO_API_TOKEN }}" ] || { echo "❌ DO_API_TOKEN missing"; exit 1; }
+          [ -n "${{ secrets.SSH_KEY_NAME }}" ] || { echo "❌ SSH_KEY_NAME missing"; exit 1; }
+          echo "✅ Secrets valid"
+
+      - name: 🔧 Install Tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y jq curl bc
-          echo "✅ Dependencies نصب شدند"
-      
-      # ════════════════════════════════════════════════════════════════════
-      # 🔍 Step 3: Validate API Keys
-      # ════════════════════════════════════════════════════════════════════
-      - name: 🔍 Validate API Keys
-        run: |
-          if [ -z "${{ secrets.DO_API_TOKEN }}" ]; then
-            echo "❌ Error: DO_API_TOKEN is not set"
-            exit 1
-          fi
-          if [ -z "${{ secrets.SSH_KEY_NAME }}" ]; then
-            echo "❌ Error: SSH_KEY_NAME is not set"
-            exit 1
-          fi
-          echo "✅ API Keys معتبر هستند"
-      
-      # ════════════════════════════════════════════════════════════════════
-      # 📊 Step 4: Display Configuration
-      # ════════════════════════════════════════════════════════════════════
-      - name: 📊 Display Configuration
-        run: |
-          echo "═══════════════════════════════════════════════════════════"
-          echo "🎯 پیکربندی سرور MahdiArts"
-          echo "═══════════════════════════════════════════════════════════"
-          echo "📝 نام سرور: ${{ github.event.inputs.server_name }}"
-          echo "🌍 منطقه: ${{ github.event.inputs.region }}"
-          echo "💻 پلن: ${{ github.event.inputs.size_slug }}"
-          echo "🌐 IPv6: فعال (enabled)"
-          echo "📊 Monitoring: فعال (enabled)"
-          echo "═══════════════════════════════════════════════════════════"
-      
-      # ════════════════════════════════════════════════════════════════════
-      # 🏗️ Step 5: Create Server
-      # ════════════════════════════════════════════════════════════════════
-      - name: 🏗️ Create Server
-        run: |
-          echo "🏗️ شروع ایجاد سرور..."
-          bash ./create-server.sh
-        env:
-          DO_DROPLET_NAME: ${{ github.event.inputs.server_name }}
-          DO_REGION: ${{ github.event.inputs.region }}
-          DO_SIZE_SLUG: ${{ github.event.inputs.size_slug }}
-          DO_ENABLE_IPV6: "true"
-          DO_ENABLE_BACKUPS: "false"
-          DO_ENABLE_MONITORING: "true"
-          DO_TAGS: "mahdiarts,production,automated"
-          DO_API_TOKEN: ${{ secrets.DO_API_TOKEN }}
-          SSH_KEY_NAME: ${{ secrets.SSH_KEY_NAME }}
-      
-      # ════════════════════════════════════════════════════════════════════
-      # 📋 Step 6: Generate Job Summary
-      # ════════════════════════════════════════════════════════════════════
-      - name: 📋 Generate Job Summary
-        if: always()
-        run: |
-          echo "## 🎯 پیکربندی سرور" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| 📌 پارامتر | 📝 مقدار |" >> $GITHUB_STEP_SUMMARY
-          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-          echo "| **📝 نام سرور** | \`${{ github.event.inputs.server_name }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **🌍 منطقه** | \`${{ github.event.inputs.region }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **💻 پلن** | \`${{ github.event.inputs.size_slug }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **🌐 IPv6** | فعال |" >> $GITHUB_STEP_SUMMARY
-          echo "| **📊 Monitoring** | فعال |" >> $GITHUB_STEP_SUMMARY
-          echo "| **🏷️ Tags** | \`mahdiarts,production,automated\` |" >> $GITHUB_STEP_SUMMARY
+          sudo apt-get install -y jq curl bc 2>&1 | tail -1
 
-                # ════════════════════════════════════════════════════════════════════
-                      # 📡 Step 7: Display Complete Server Information
-                            # ════════════════════════════════════════════════════════════════════
-                                  - name: 📡 Display Complete Server Information
-                                          if: always()
-                                                  run: |
-                                                            echo "" >> $GITHUB_STEP_SUMMARY
-                                                                      echo "---" >> $GITHUB_STEP_SUMMARY
-                                                                                echo "" >> $GITHUB_STEP_SUMMARY
-                                                                                          echo "## 🚀 اطلاعات کامل سرور ایجاد شده" >> $GITHUB_STEP_SUMMARY
-                                                                                                    echo "" >> $GITHUB_STEP_SUMMARY
-                                                                                                              
-                                                                                                                        # Read server information from files
-                                                                                                                                  if [ -f ".droplet_ip" ]; then
-                                                                                                                                              DROPLET_IP=$(cat .droplet_ip)
-                                                                                                                                                          DROPLET_ID=$(cat .droplet_id)
-                                                                                                                                                                      
-                                                                                                                                                                                  echo "### 💻 مشخصات سرور" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                              echo "" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                          echo "| 📌 پارامتر | 📝 مقدار |" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                      echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                  echo "| **🆔 Droplet ID** | \`$DROPLET_ID\` |" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                              echo "| **🌐 IP Address** | \`$DROPLET_IP\` |" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                          echo "| **🔑 SSH Access** | \`ssh root@$DROPLET_IP\` |" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                          
-                                                                                                                                                                                                                                                                      echo "" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                  echo "### 🖥️ KASM Workspace - دسکتاپ ابری" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                              echo "" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                          echo "| 🎯 پارامتر | 📝 مقدار / توضیحات |" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                      echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                                  echo "| **🌐 URL** | \`https://$DROPLET_IP:3000\` |" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                                              echo "| **👤 کاربر** | \`admin@kasm.local\` (پیش‌فرض) |" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                                                          echo "| **🔑 رمز عبور** | بعد از نصب در لاگ‌های سرور نمایش داده می‌شود |" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                                                                      echo "| **⌛ زمان نصب** | حدود 5-10 دقیقه پس از ایجاد سرور |" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                                                                                  echo "| **📖 مستندات** | [KASM Docs](https://kasmweb.com/docs) |" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                                                                                  
-                                                                                                                                                                                                                                                                                                                                                                                              echo "" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                                                                                                          echo "### 📱 RustDesk Server - دسترسی از راه دور" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                                                                                                                      echo "" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                                                                                                                                  echo "| 🎯 پارامتر | 📝 مقدار / توضیحات |" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                                                                                                                                              echo "|---|---|" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                                                                                                                                                          echo "| **🌐 Server Address** | \`$DROPLET_IP\` |" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                      echo "| **🔌 Port (hbbs)** | \`21116\` (تست قلب), \`21115\` (NAT) |" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  echo "| **🔌 Port (hbbr)** | \`21117\` (رله) |" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              echo "| **🔑 Encryption Key** | در \`/root/rustdesk/id_ed25519.pub\` |" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          echo "| **📖 مستندات** | [RustDesk Docs](https://rustdesk.com/docs) |" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      echo "" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  echo "> **⚠️ توجه:** پس از ایجاد سرور، KASM Workspace و RustDesk به صورت خودکار نصب می‌شوند. لطفاً 5-10 دقیقه صبر کنید." >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            else
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        echo "❌ خطا: فایل اطلاعات سرور پیدا نشد" >> $GITHUB_STEP_SUMMARY
-                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  fi
+      - name: 🔑 Get SSH Key ID
+        id: get_ssh_key
+        run: |
+          response=$(curl -s -X GET \
+            -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
+            "https://api.digitalocean.com/v2/account/keys")
+          
+          ssh_id=$(echo "$response" | jq -r ".ssh_keys[] | select(.name==\"${{ secrets.SSH_KEY_NAME }}\") | .id")
+          
+          if [ -z "$ssh_id" ] || [ "$ssh_id" = "null" ]; then
+            echo "❌ SSH Key not found: ${{ secrets.SSH_KEY_NAME }}"
+            exit 1
+          fi
+          
+          echo "ssh_key_id=$ssh_id" >> $GITHUB_OUTPUT
+          echo "✅ SSH Key found"
+
+      - name: 💰 Calculate Cost
+        id: calc_cost
+        run: |
+          case "${{ github.event.inputs.size_slug }}" in
+            s-2vcpu-4gb) echo "monthly=26" ;;
+            s-4vcpu-8gb) echo "monthly=52" ;;
+            m-8vcpu-64gb) echo "monthly=435" ;;
+            m-16vcpu-128gb) echo "monthly=870" ;;
+            m-24vcpu-192gb) echo "monthly=1305" ;;
+            m-32vcpu-256gb) echo "monthly=1740" ;;
+          esac >> $GITHUB_OUTPUT
+
+  create:
+    name: 🏗️ Create Server
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      droplet_id: ${{ steps.create.outputs.droplet_id }}
+      server_ip: ${{ steps.get_info.outputs.ipv4 }}
+
+    steps:
+      - name: 🔨 Install Tools
+        run: sudo apt-get install -y jq curl 2>&1 | tail -1
+
+      - name: 🏗️ Create Droplet
+        id: create
+        timeout-minutes: 3
+        run: |
+          echo "🏗️ Creating Droplet..."
+          
+          payload=$(cat <<'EOF'
+{
+  "name": "${{ github.event.inputs.server_name }}",
+  "region": "${{ github.event.inputs.region }}",
+  "size": "${{ github.event.inputs.size_slug }}",
+  "image": "ubuntu-24-04-x64",
+  "ssh_keys": [${{ needs.validate.outputs.ssh_key_id }}],
+  "backups": ${{ github.event.inputs.enable_backups }},
+  "ipv6": ${{ github.event.inputs.enable_ipv6 }},
+  "monitoring": true,
+  "tags": ["${{ github.event.inputs.custom_tags }}".split(",")]
+}
+EOF
+          )
+          
+          response=$(curl -s -w "\n%{http_code}" -X POST \
+            -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
+            -d "$payload" \
+            "https://api.digitalocean.com/v2/droplets")
+          
+          http_code=$(echo "$response" | tail -1)
+          body=$(echo "$response" | sed '$d')
+          
+          [ "$http_code" = "201" ] || { echo "❌ Creation failed"; exit 1; }
+          
+          droplet_id=$(echo "$body" | jq -r '.droplet.id')
+          echo "droplet_id=$droplet_id" >> $GITHUB_OUTPUT
+          echo "✅ Droplet created: $droplet_id"
+
+      - name: ⏳ Wait for Activation
+        timeout-minutes: 12
+        run: |
+          droplet_id="${{ steps.create.outputs.droplet_id }}"
+          echo "⏳ Waiting for activation..."
+          
+          for i in {0..50}; do
+            status=$(curl -s -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
+              "https://api.digitalocean.com/v2/droplets/$droplet_id" | jq -r '.droplet.status')
+            
+            [ "$status" = "active" ] && { echo "✅ Active"; exit 0; }
+            printf "\r[%3d%%] Status: %-8s" "$((i*2))" "$status"
+            sleep 12
+          done
+          
+          echo "\n❌ Timeout"
+          exit 1
+
+      - name: 📊 Get Info
+        id: get_info
+        run: |
+          data=$(curl -s -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
+            "https://api.digitalocean.com/v2/droplets/${{ steps.create.outputs.droplet_id }}")
+          
+          ipv4=$(echo "$data" | jq -r '.droplet.networks.v4[] | select(.type=="public") | .ip_address' | head -1)
+          echo "ipv4=$ipv4" >> $GITHUB_OUTPUT
+          echo "$ipv4" > .droplet_ip
+          echo "✅ IP: $ipv4"
+
+      - name: 🏥 Health Check
+        timeout-minutes: 5
+        run: |
+          ip="${{ steps.get_info.outputs.ipv4 }}"
+          for i in {1..10}; do
+            timeout 3 bash -c "echo >/dev/tcp/$ip/22" 2>/dev/null && exit 0
+            echo "⏳ SSH attempt $i/10"
+            sleep 3
+          done
+          echo "⚠️ SSH not yet available"
+
+      - name: 💾 Save Info
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: server-${{ steps.create.outputs.droplet_id }}
+          path: .droplet_ip
+          retention-days: 30
+
+  summary:
+    name: 📋 Summary
+    needs: [validate, create]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+      - name: 🌟 Success Summary
+        if: success()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          # 🎉 Server Created Successfully!
+          
+          ## 📋 Configuration
+          
+          | 💫 Parameter | 📄 Value |
+          |---|---|
+          | **Server Name** | `${{ github.event.inputs.server_name }}` |
+          | **Droplet ID** | `${{ needs.create.outputs.droplet_id }}` |
+          | **IP Address** | `${{ needs.create.outputs.server_ip }}` |
+          | **Region** | `${{ github.event.inputs.region }}` |
+          | **Plan** | `${{ github.event.inputs.size_slug }}` |
+          | **Monthly Cost** | `${{ needs.validate.outputs.monthly_cost }}$` |
+          | **IPv6** | ${{ github.event.inputs.enable_ipv6 }} |
+          | **Backups** | ${{ github.event.inputs.enable_backups }} |
+          
+          ## 🔗 Connection Command
+          
+          ```bash
+          ssh root@${{ needs.create.outputs.server_ip }}
+          ```
+          
+          ## ⚠️ Important Notes
+          
+          - ⏳ Installation takes 5-20 minutes
+          - 🔑 SSH key authentication is configured
+          - 🗑 **Remember to delete the server when done!**
+          
+          ---
+          **✨ Ready to use!**
+          EOF
+
+      - name: ❌ Failure Summary
+        if: failure()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          # ❌ Creation Failed
+          
+          Please check:
+          1. ✅ Secrets are configured
+          2. ✅ SSH Key exists in DigitalOcean
+          3. ✅ Account has available quota
+          4. ✅ Region supports the selected plan
+          
+          **Check logs above for details.**
+          EOF
