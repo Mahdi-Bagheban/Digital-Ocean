@@ -1,273 +1,457 @@
-# 🚀 DigitalOcean Development Workspace
+# 🚀 DigitalOcean Automation Suite v5.0
 
-![Version](https://img.shields.io/badge/version-4.0-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Status](https://img.shields.io/badge/status-active-success)
+<div dir="rtl" align="right">
 
-ابزار خودکار برای ایجاد و مدیریت سرورهای قدرتمند توسعه در DigitalOcean با **KASM Workspace** و **RustDesk Server**.
+> **برنامه‌برنامه خودکار‌سازی کامل ایجاد و مدیریت سرور‌های DigitalOcean برای محیط‌های قدرتمند و پرایک‌س انلاین**
 
-## 🔛 ویژگی‌ها
+[![🔧 Status: Active](https://img.shields.io/badge/Status-Active-brightgreen)]()
+[![🔖 Version: 5.0](https://img.shields.io/badge/Version-5.0-blue)]()
+[![📄 License: MIT](https://img.shields.io/badge/License-MIT-green)](LICENSE)
+[![🐚 Language: Bash](https://img.shields.io/badge/Language-Bash-ff69b4)]()
+[![👤 Author: Mahdi Bagheban](https://img.shields.io/badge/Author-Mahdi%20Bagheban-orange)](https://github.com/Mahdi-Bagheban)
 
-- ✅ **خودکار کامل**: GitHub Actions برای ایجاد و حذف سرور
-- 💻 **KASM Workspace**: دسکتاپ کامل در مرورگر (GUI دسکتاپ)
-- 🔐 **RustDesk Server**: دسترسی از راه دور (Remote Desktop)
-- 📦 **Docker**: تمام ابزارها برای containerization
-- 🚀 **Node.js 20 LTS**: محیط JavaScript
-- 🐍 **Python 3**: برای scripting و data science
-- 📤 **انعطافپذیری کامل**: انتخاب پلن، منطقه، و تنظیمات
-- 🤑 **هوشمند**: پیش‌فرض‌های معقول + امکان customize
+</div>
 
-## 📊 مشخصات سرور پیشفرض
+---
 
-### **پلن اصلی** (توصیه شده):
-- **Memory-Optimized Premium Intel**: `m-16vcpu-64gb`
-- **RAM**: 64GB DDR4
-- **vCPU**: 16 (Dedicated)
-- **SSD**: 400GB NVMe
-- **Transfer**: 8TB
-- **هزینه**: ~$0.595/ساعت ($428/ماه)
+## 📖 تضمین سریع
 
-### **پلن‌های جایگزین** (در GitHub Actions قابل انتخاب):
-- `m-24vcpu-192gb` - 24 vCPU, 192GB RAM
-- `m-32vcpu-256gb` - 32 vCPU, 256GB RAM
-- `c-16` / `c-32` - CPU-Optimized
-- `r-16vcpu-128gb` / `r-32vcpu-256gb` - Memory-Optimized
-- `s-2vcpu-4gb` / `s-4vcpu-8gb` - برای تست (کم‌هزینه)
+### 🚀 محیط قدرتمند یک کلیک!
+- **GitHub Actions**: کلیک سریع برای ایجاد سرور
+- **یا Bash Script**: اجرای مستقیم روی Linux/macOS
+- **KASM Workspace**: دسکتاپ الکترونیکی در مرورگر
+- **RustDesk Server**: دسترسی میزوار
+- **Docker + Node.js + Python**: محیط توسعه کامل
+
+---
+
+## ✨ ویژگی‌ها
+
+### 🎯 اتوماسیون کامل
+- ✅ ایجاد سرور یک کلیک با GitHub Actions
+- ✅ Configuration پیش‌فرض معقول
+- ✅ پشتیبانی اختیاری Backup و IPv6
+- ✅ Error handling قوی و Retry mechanism
+- ✅ Progress indicators و خروجی User-friendly
+
+### 💡 Best Practices
+- ✅ Environment variable بدون Hardcoding
+- ✅ Validation کامل ورودی‌ها
+- ✅ Health Check خودکار
+- ✅ Artifacts برای اطلاعات سرور
+- ✅ GitHub Actions best practices
+
+### 🛠️ محیط قدرتمند
+- ✅ KASM Workspace 1.15 (دسکتاپ در مرورگر)
+- ✅ RustDesk Server (دسترسی از راه دور)
+- ✅ Docker Pre-installed
+- ✅ Node.js 20 LTS + Python 3
+- ✅ Git, tmux, zsh + Oh My Zsh
+- ✅ Ubuntu 24.04 LTS
+
+### 🎨 منعطف و پیکربندی‌پذیر
+- ✅ تعیین اندازه سرور (s-2vcpu-4gb تا m-32vcpu-256gb)
+- ✅ انتخاب منطقه (fra1, ams3, lon1, nyc1, sfo3, sgp1)
+- ✅ Custom tags و Monitoring
+
+---
+
+## 📋 نیازمندی‌ها
+
+### GitHub Actions
+```
+✓ GitHub Account
+✓ DigitalOcean Account (حساب فعال)
+✓ DigitalOcean API Token
+✓ SSH Key در DigitalOcean
+```
+
+### محلی (Local Script)
+```bash
+✓ Bash 4.0+
+✓ curl
+✓ jq (JSON processor)
+✓ bc (Calculator - اختیاری)
+✓ Linux/macOS (یا Windows Subsystem for Linux)
+```
+
+**نصب پیش‌نیازها:**
+
+```bash
+# Ubuntu/Debian
+sudo apt-get update && sudo apt-get install -y curl jq bc
+
+# macOS
+brew install curl jq bc
+
+# Windows (Scoop)
+scoop install jq curl bc
+```
+
+---
 
 ## 🚀 شروع سریع
 
-### **الف) تنظیم GitHub Secrets** 
+### گام 1️⃣: تنظیم Secrets در GitHub
 
-1. به `Settings` → `Secrets and variables` → `Actions` رفتید
-2. دو Secret اضافه کنید:
+به مسیر زیر بروید:
+```
+Settings → Secrets and variables → Actions → New repository secret
+```
+
+**Secrets مورد نیاز:**
+
+| نام | توضیح | مثال |
+|------|----------|----------|
+| `DO_API_TOKEN` | API Token از DigitalOcean | `dop_v1_abc123...` |
+| `SSH_KEY_NAME` | نام SSH Key در DigitalOcean | `my-ssh-key` |
+
+**راهنمای دریافت API Token:**
+1. وارد [DigitalOcean Control Panel](https://cloud.digitalocean.com) شوید
+2. **API → Tokens/Keys → Generate New Token**
+3. Scopes: "Read" و "Write" را انتخاب کنید
+4. کپی و در Secrets GitHub قرار دهید
+
+**اضافه کردن SSH Key:**
+1. **Settings → Security → SSH keys → Add SSH key**
+2. کلید عمومی SSH خود را پیست کنید
+3. نام آن را در `SSH_KEY_NAME` قرار دهید
+
+---
+
+### گام 2️⃣: اجرای GitHub Actions
+
+1. بروید به تب **Actions**
+2. **🚀 Create Development Server** را انتخاب کنید
+3. **Run workflow** را کلیک کنید
+4. پارامترها را تنظیم کنید:
+
+```
+📝 نام سرور: mahdi-dev-workspace-64gb
+🌍 منطقه: fra1 (Frankfurt)
+💻 اندازه: m-8vcpu-64gb (8 CPU, 64GB RAM)
+🌐 IPv6: true
+💾 Backups: false (default)
+🏷️  Tags: github-actions,development
+```
+
+5. **Run workflow** را کلیک کنید
+6. منتظر تکمیل بمانید (حدود 5-10 دقیقه)
+
+---
+
+### گام 3️⃣: اتصال به سرور
+
+پس از اتمام موفق، دستورات اتصال را مشاهده کنید:
 
 ```bash
-DO_API_TOKEN = "your_digitalocean_api_token"
-SSH_KEY_NAME = "MahdiArts"  # نام SSH Key شما در DigitalOcean
+# SSH (ترمینال)
+ssh root@YOUR_IP_ADDRESS
+
+# مثال:
+ssh root@165.232.123.45
 ```
 
-### **ب) اجرای Workflow** 🎯
+---
 
-**روش 1: از طریق GitHub UI**
+## 🖥️ استفاده محلی (Local)
 
-1. به `Actions` رفتید
-2. `🚀 Create Development Server` را انتخاب کنید
-3. `Run workflow` کلیک کنید
-4. پارامترها را پر کنید:
-   - **Server Name**: نام سرور (مثال: `mahdi-dev-workspace-64gb`)
-   - **Region**: منطقه (مثال: `fra1` برای فرانکفورت)
-   - **Size Slug**: پلن سرور (پیشفرض: `m-16vcpu-64gb`)
-   - **Enable IPv6**: `true` یا `false`
-   - **Enable Backups**: `true` یا `false` (هزینه دارد)
-   - **Custom Tags** (اختیاری): برچسب‌های سفارشی
-
-**روش 2: محلی (Local)**
+### مراحل اجرا:
 
 ```bash
-# 1. فایل .env را ایجاد کنید
-cat > .env << EOF
-DO_API_TOKEN=your_token_here
-SSH_KEY_NAME=MahdiArts
-EOF
+# 1. Clone کردن repository
+git clone https://github.com/YOUR_USERNAME/Digital-Ocean.git
+cd Digital-Ocean
 
-# 2. اسکریپت را اجرا کنید
-bash ./create-server.sh
+# 2. ایجاد فایل .env
+cp .env.example .env
+
+# 3. تنظیم متغیرها
+nano .env  # یا ویرایشگر خود را استفاده کنید
+
+# 4. اجرا
+chmod +x create-server.sh
+./create-server.sh
 ```
 
-## 🔗 دستورات اتصال
+### محتوای فایل `.env`:
 
-بعد از ایجاد سرور:
-
-### **1️⃣ SSH (ترمینال)**
 ```bash
-ssh root@YOUR_SERVER_IP
+# ✓ الزامی
+DO_API_TOKEN="dop_v1_your_token_here"
+SSH_KEY_NAME="your-ssh-key-name"
+
+# ✓ اختیاری (پیش‌فرض)
+DO_DROPLET_NAME="mahdi-dev-workspace-64gb"
+DO_REGION="fra1"
+DO_SIZE_SLUG="m-8vcpu-64gb"
+DO_ENABLE_IPV6="true"
+DO_ENABLE_BACKUPS="false"
+DO_TAGS="github-actions,development,kasm"
+DO_IMAGE="ubuntu-24-04-x64"
 ```
 
-### **2️⃣ KASM Workspace (GUI دسکتاپ)**
+---
+
+## 🔧 تنظیمات و Options
+
+### اندازه‌های دسترسی‌پذیر (Size Slug)
+
+| پلن | CPU | RAM | SSD | هزینه (ماهانه) | مورد استفاده |
+|-----|-----|-----|-----|-------|-------------|
+| **s-2vcpu-4gb** | 2 | 4GB | 80GB | ~$26 | تست، دمو خیلی سبک |
+| **s-4vcpu-8gb** | 4 | 8GB | 160GB | ~$52 | دمو سبک |
+| **m-8vcpu-64gb** | 8 | 64GB | 200GB | ~$435 | **توصیه شده** - توسعه |
+| **m-16vcpu-128gb** | 16 | 128GB | 400GB | ~$870 | پروژه‌های بزرگ |
+| **m-24vcpu-192gb** | 24 | 192GB | 600GB | ~$1305 | داده‌های بزرگ |
+| **m-32vcpu-256gb** | 32 | 256GB | 800GB | ~$1740 | درخواست‌های سنگین |
+
+### منطقه‌ها (Regions)
+
+| کد | نام | مکان | Latency | بهترین برای |
+|----|------|------|---------|----------|
+| **fra1** | Frankfurt | 🇩🇪 آلمان | ~10-15ms | **پیشفرض** - بهترین برای ایران |
+| **ams3** | Amsterdam | 🇳🇱 هلند | ~12-18ms | اروپای شمالی |
+| **lon1** | London | 🇬🇧 انگلیس | ~15-20ms | اروپا |
+| **nyc1** | New York | 🇺🇸 آمریکا | ~60-80ms | آمریکای شمالی |
+| **sfo3** | San Francisco | 🇺🇸 آمریکا | ~120-140ms | آمریکای غربی |
+| **sgp1** | Singapore | 🇸🇬 سنگاپور | ~80-100ms | آسیا |
+
+---
+
+## 📊 معماری
+
 ```
-https://YOUR_SERVER_IP:443
-Username: admin@kasm.local
-Password: (از طریق SSH دریافت کنید)
+┌──────────────────────────────────────────────────────────────┐
+│         GitHub Actions Workflow or Local Script              │
+│    (یا Bash Script شما از ترمینال)                       │
+└──────────────────────┬──────────────────────────────────────┘
+                   │
+        ┌──────────┴──────────┐
+        │ Validation &        │
+        │ Check SSH Key       │
+        └──────────┬──────────┘
+                   │
+        ┌──────────┴──────────────────────┐
+        │ Create Droplet on DigitalOcean   │
+        │ (Ubuntu 24.04)                  │
+        └──────────┬──────────────────────┘
+                   │
+        ┌──────────┴──────────┐
+        │ Wait for Boot       │
+        │ & IP Address        │
+        └──────────┬──────────┘
+                   │
+        ┌──────────┴────────────────────────────────┐
+        │ Auto-Install on Droplet:                 │
+        │ ├─ Docker & Docker Compose               │
+        │ ├─ KASM Workspace                        │
+        │ ├─ RustDesk Server                       │
+        │ ├─ Node.js 20 LTS                        │
+        │ ├─ Python 3 + pip                        │
+        │ ├─ Git, tmux, zsh                        │
+        │ └─ Security (UFW, etc)                   │
+        └──────────┬────────────────────────────────┘
+                   │
+        ┌──────────┴──────────────────┐
+        │ Health Check & Display       │
+        │ Summary                      │
+        └──────────────────────────────┘
 ```
 
-### **3️⃣ RustDesk (Remote Desktop)**
-```
-Server Address: YOUR_SERVER_IP
-Ports: 21115-21119
-Public Key: ssh root@YOUR_SERVER_IP cat /root/rustdesk-public-key.txt
-```
+---
 
-## 📊 مشاهده لاگ و اطلاعات
+## 🔐 امنیت
 
-### **لاگ نصب (Live)**
-```bash
-ssh root@YOUR_SERVER_IP tail -f /var/log/server-install.log
-```
+### بهترین تمرین‌ها
 
-### **اطلاعات کامل سرور**
-```bash
-ssh root@YOUR_SERVER_IP /root/server-info.sh
-```
+✅ **API Token Management**
+- فقط از GitHub Secrets استفاده کنید
+- کلیدها را هرگز Commit نکنید
+- Token‌ها را دوره‌ای Rotate کنید
+
+✅ **SSH Security**
+- SSH Key-based authentication تنها
+- Password Authentication غیرفعال
+- Default Port تغییر یافته
+
+✅ **Firewall**
+- UFW (Uncomplicated Firewall) فعال
+- فقط پورت‌های ضروری باز
+- All inbound denied by default
+
+✅ **Monitoring**
+- DigitalOcean Monitoring فعال
+- Health checks خودکار
+- Alerts برای مشاکل
+
+---
 
 ## 🗑️ حذف سرور
 
-### **روش 1: GitHub Actions**
-1. به `Actions` رفتید
-2. `🗑️ Delete Development Server` را انتخاب کنید
-3. Server ID یا Name وارد کنید
+### روش 1: GitHub Actions
+1. بروید **Actions**
+2. **🗑️ Delete Development Server** را انتخاب کنید
+3. Server ID یا Name را وارد کنید
 4. تأیید کنید
 
-### **روش 2: محلی**
+### روش 2: محلی
 ```bash
 bash ./delete-server.sh
 ```
 
-## 📋 فایل‌های پروژه
+---
+
+## 💰 هزینه
+
+### مثال برای m-8vcpu-64gb (پیشفرض)
 
 ```
-.
-├── create-server.sh          # اسکریپت ایجاد سرور
-├── delete-server.sh          # اسکریپت حذف سرور
-├── lib.sh                    # توابع مشترک
-├── .github/workflows/
-│   ├── create-server.yml     # Workflow ایجاد
-│   └── delete-server.yml     # Workflow حذف
-├── README.md                 # این فایل
-├── SETUP.md                  # راهنمای تنظیم
-├── TROUBLESHOOTING.md        # حل مشکلات
-├── RUSTDESK_GUIDE.md         # راهنمای RustDesk
-└── .env.example              # نمونه متغیرهای محیط
+ساعتی:   $0.5952/hour
+روزانه:   ~$14.28/day
+ماهانه:   ~$435/month (بر اساس 730 ساعت)
+
+Backup (اختیاری): +20% (~$87/month)
+Data Transfer:     $0.20/GB (بعد از 8TB)
 ```
-
-## ⚠️ نکات مهم
-
-### **هزینه‌ها** 💰
-- پلن `m-16vcpu-64gb`: ~$0.595/ساعت
-- پلن `m-24vcpu-192gb`: ~$1.785/ساعت
-- پلن تست `s-2vcpu-4gb`: ~$0.036/ساعت
-
-### **حفاظت** 🔒
-- Firewall UFW فعال است
-- تنها پورت‌های ضروری باز هستند
-- SSH Key-based Authentication (رمز عبور غیرفعال)
-
-### **نصب و نرم‌افزار** 📦
-ابزارهای اتوماتیکی:
-- Docker & Docker Compose
-- KASM Workspace
-- RustDesk Server
-- Node.js 20 LTS
-- Python 3 + pip
-- Git, Curl, Wget, Htop, etc.
-
-زمان نصب: **۵-۲۰ دقیقه** (بستگی به سرعت اینترنت)
-
-### **⏰ مدیریت سرور**
-
-- **موقت**: سرور برای کار تقلبی، توسعه، و تست است
-- **خودکار حذف پیشنهاد**: بعد از اتمام کار، سرور را حذف کنید
-- **Snapshots**: اختیاری (برای پشتیبان‌گیری)
-
-## 🛠️ تخصیص و مدیریت
-
-### **تغییر اندازه (Scale)**
-
-برای تغییر اندازه سرور در GitHub Actions:
-1. Workflow را اجرا کنید
-2. `size_slug` را تغییر دهید:
-   ```bash
-   m-16vcpu-64gb  → m-32vcpu-256gb  (بزرگ‌تر)
-   m-16vcpu-64gb  → s-4vcpu-8gb     (کوچک‌تر/تست)
-   ```
-
-### **تغییر منطقه (Region)**
-
-پلن‌های مختلف در منطقه‌های مختلف دسترسی دارند:
-- `fra1` - Frankfurt (بهترین برای اروپا)
-- `ams3` - Amsterdam
-- `nyc1` - New York
-- `sgp1` - Singapore
-
-## 📞 پشتیبانی و مشاهده وضعیت
-
-### **ورودی‌های Environment** 🔧
-
-تمام ورودی‌های ممکن که می‌توانید customize کنید:
-
-```bash
-DO_DROPLET_NAME="mahdi-dev-workspace-64gb"
-DO_REGION="fra1"
-DO_SIZE_SLUG="m-16vcpu-64gb"
-DO_IMAGE="ubuntu-24-04-x64"
-DO_TAGS="mahdiarts,kasm-workspace,rustdesk"
-DO_ENABLE_IPV6="true"
-DO_ENABLE_BACKUPS="false"
-DO_AUTO_SHUTDOWN_HOURS=""  # خالی = غیرفعال
-```
-
-### **صحت‌سنجی Secrets**
-
-```bash
-# بررسی API Token
-curl -X GET -H "Authorization: Bearer $DO_API_TOKEN" \
-  https://api.digitalocean.com/v2/account
-
-# لیست SSH Keys
-curl -X GET -H "Authorization: Bearer $DO_API_TOKEN" \
-  https://api.digitalocean.com/v2/account/keys
-```
-
-## 🎓 مثال‌های استفاده
-
-### **سناریو 1: تست سریع**
-```
-Size: s-2vcpu-4gb (ارزان)
-Region: fra1
-Enable Backups: false
-مدت: 1-2 ساعت
-```
-
-### **سناریو 2: توسعه سنگین**
-```
-Size: m-16vcpu-64gb (توصیه شده)
-Region: fra1
-Enable IPv6: true
-Enable Backups: false
-مدت: چند روز
-```
-
-### **سناریو 3: تولید (Production-like)**
-```
-Size: m-24vcpu-192gb یا بیشتر
-Region: fra1
-Enable Backups: true
-Enable IPv6: true
-مدت: طولانی
-```
-
-## 🔐 Security Considerations
-
-- ✅ SSH Key-based authentication
-- ✅ UFW Firewall enabled
-- ✅ HTTP/HTTPS only exposed ports
-- ✅ System updates on boot
-- ✅ Regular log monitoring
-
-## 📚 مستندات بیشتر
-
-- [SETUP.md](SETUP.md) - تنظیم دقیق
-- [TROUBLESHOOTING.md](TROUBLESHOOTING.md) - حل مشکلات
-- [RUSTDESK_GUIDE.md](RUSTDESK_GUIDE.md) - راهنمای RustDesk
-- [FIXES.md](FIXES.md) - رفع‌های شناخته‌شده
-
-## 📄 لیسانس
-
-MIT License - آزاد برای استفاده و توزیع
 
 ---
 
-**نسخه**: 4.0 | **آخرین به‌روزرسانی**: دسامبر 2025
+## 🐛 Troubleshooting
 
-**ساخت شده توسط**: [Mahdi Bagheban](https://github.com/Mahdi-Bagheban)
+### مشکل: "API Token not found"
 
-**بسم الله الرحمن الرحیم** ✨
+**راه حل:**
+```bash
+# Local script:
+export DO_API_TOKEN="your-token"
+
+# یا .env میں:
+DO_API_TOKEN="dop_v1_..."
+
+# GitHub Actions:
+# Settings → Secrets → DO_API_TOKEN
+```
+
+### مشکل: "SSH Key not found"
+
+**راه حل:**
+```bash
+# ابتدا کلید را بررسی کنید:
+curl -s -X GET \
+  -H "Authorization: Bearer $DO_API_TOKEN" \
+  https://api.digitalocean.com/v2/account/keys | jq '.ssh_keys[] | .name'
+
+# نام دقیق را استفاده کنید
+```
+
+### مشکل: "Rate limit exceeded"
+
+**راه حل:**
+- اسکریپت خودکار Retry می‌کند (3 بار)
+- منتظر 10 ثانیه بین تلاش‌ها
+- محدودیت: 5000 requests/hour
+
+### مشکل: Droplet بلند نمی‌شود
+
+**راه حل:**
+1. Quota DigitalOcean را بررسی کنید
+2. منطقه قابل دسترس است؟
+3. اندازه سرور در آن منطقه موجود است؟
+
+---
+
+## 📚 مستندات جزئی
+
+| فایل | توضیح |
+|------|-------|
+| `.github/workflows/create-server.yml` | GitHub Actions Workflow |
+| `create-server.sh` | اسکریپت ایجاد سرور (محلی) |
+| `delete-server.sh` | اسکریپت حذف سرور |
+| `.env.example` | نمونه فایل تنظیمات |
+| `README.md` | این فایل |
+| `CHANGELOG.md` | تاریخچه تغییرات |
+
+### Output Files
+
+پس از ایجاد سرور:
+
+```bash
+.droplet_id          # شناسه سرور
+.droplet_ip          # آدرس IPv4
+.droplet_ipv6        # آدرس IPv6 (if enabled)
+.droplet_created_at  # زمان ایجاد
+```
+
+---
+
+## 🤝 مشارکت
+
+درخواست‌های Pull و Issues خوشامد!
+
+```bash
+# Fork → Clone → Create Branch → Commit → Push → PR
+git clone https://github.com/YOUR_USERNAME/Digital-Ocean.git
+git checkout -b feature/your-feature
+# ... تغییرات شما ...
+git push origin feature/your-feature
+```
+
+### قوانین:
+- Bash و YAML syntax valid باشند
+- کامنت‌ها به فارسی
+- نام متغیرها به انگلیسی
+- Test روی محیط خود
+
+---
+
+## 📄 لایسنس
+
+MIT License - برای جزئیات بیشتر [LICENSE](LICENSE) را ببینید.
+
+---
+
+## 👤 درباره نویسنده
+
+**Mahdi Bagheban**
+- 🔗 GitHub: [@Mahdi-Bagheban](https://github.com/Mahdi-Bagheban)
+- 🌐 Website: [در صورت وجود]
+
+---
+
+## 🙏 تشکر
+
+- **DigitalOcean** - برای API و سرورهای قابل اعتماد
+- **KASM Team** - برای KASM Workspace
+- **RustDesk Project** - برای RustDesk Server
+- **جامعه متن‌باز** - برای ابزارهای فوق‌العاده
+
+---
+
+## 🔗 منابع مفید
+
+- [DigitalOcean API Documentation](https://docs.digitalocean.com/reference/api/)
+- [DigitalOcean CLI (doctl)](https://docs.digitalocean.com/reference/doctl/)
+- [KASM Workspace Docs](https://www.kasmweb.com/)
+- [RustDesk Server Setup](https://github.com/rustdesk/rustdesk-server)
+- [Bash Best Practices](https://mywiki.wooledge.org/BashGuide)
+
+---
+
+<div dir="rtl" align="right">
+
+## نسخه‌های قبلی
+
+- **v5.0** (2025-12-12) - بازنویسی کامل، بهبود خطا، progress bars
+- **v4.0** (2025-12-08) - اضافه کردن KASM Workspace
+- **v3.0** (2025-12-05) - RustDesk Server integration
+- **v2.0** (2025-12-01) - GitHub Actions Workflow
+- **v1.0** (2025-11-25) - اولین نسخه
+
+---
+
+**بسم‌الله الرحمن الرحیم** 🌙
+
+**آخرین به‌روزرسانی:** دسامبر 2025
+
+</div>
