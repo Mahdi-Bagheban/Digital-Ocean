@@ -79,18 +79,18 @@ check_prerequisites() {
 # بررسی وجود فایل تنظیمات
 check_env_file() {
     CONFIG_FILE=".env"
-    if [ ! -f "$CONFIG_FILE" ]; then
-        exit_error "فایل .env یافت نشد!
-لطفا فایل .env را با مقادیر زیر ایجاد کنید:
-DO_API_TOKEN=your_api_token_here
-SSH_KEY_NAME=MahdiArts"
+    # در GitHub Actions از environment variables استفاده می‌شود        exit_error "فایل .env یافت نشد!
+        if [ -f "$CONFIG_FILE" ]; then
+        print_message ".env فایل یافت شد و بارگذاری می‌شود..."
+    else
+        print_warning "فایل .env یافت نشد. از environment variables استفاده می‌شود."
     fi
 }
 
 # بارگذاری و اعتبارسنجی متغیرها
 load_and_validate_env() {
-    source ".env"
-    
+    # بارگذاری فایل .env اگر وجود داشته باشد
+    [ -f ".env" ] && source ".env"    
     if [ -z "$DO_API_TOKEN" ]; then
         exit_error "DO_API_TOKEN در فایل .env تنظیم نشده است!"
     fi
