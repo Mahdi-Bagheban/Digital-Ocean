@@ -31,12 +31,12 @@ on:
         default: 'fra1'
         type: choice
         options:
-                    - '🇩🇪 fra1 - Frankfurt (بهترین برای ایران)'
-                              - '🇳🇱 ams3 - Amsterdam (هلند)'
-                                        - '🇬🇧 lon1 - London (انگلیس)'
-                                                  - '🇺🇸 nyc1 - New York (آمریکا)'
-                                                            - '🇺🇸 sfo3 - San Francisco (کالیفرنیا)'
-                                                                      - '🇸🇬 sgp1 - Singapore (آسیا)'
+                    - 'fra1 - 🌐 Frankfurt (بهترین برای ایران)'
+                      - 'ams3 - 🌐 Amsterdam (هلند)'
+                      - 'lon1 - 🌐 London (انگلیس)'
+                      - 'nyc1 - 🌐 New York (نیویورک)'
+                      - 'sfo3 - 🌐 San Francisco (کالیفرنیا)'
+                      - 'sgp1 - 🌐 Singapore (آسیا)'
       size_slug:
         description: '💻 پلن سرور | Server Plan'
         required: true
