@@ -1,14 +1,14 @@
 # ╔════════════════════════════════════════════════════════════════════════════╗
-# ║         🚀 DigitalOcean Server Creation Workflow v5.2                ║
-# ║                                                                           ║
-# ║  📝 Purpose:  خودکار‌سازی کامل ایجاد سرور‌های DigitalOcean       ║
-# ║  🌟 Version:  5.2 (Production Ready)                                  ║
-# ║  🎉 Features:  Validation, Health Check, Cost Estimation          ║
-# ║  👤 Author:    Mahdi Bagheban                                       ║
-# ║  📅 Date:      December 2025                                        ║
+# ║ 🚀 DigitalOcean Server Automation Workflow ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
+#
+# 📝 Purpose: اتوماسیون کامل ایجاد و مدیریت سرورهای DigitalOcean
+# 🚀 Version: 8.0 (Production Ready - MahdiArts Edition)
+# 🎉 Features: KASM Workspace + RustDesk Server + Full Automation
+# 👤 Author: Mahdi Bagheban
+# 📅 Updated: December 2025
 
-name: 🚀 Create DigitalOcean Server
+name: 🚀 ایجاد سرور DigitalOcean | Create Server
 
 on:
   workflow_dispatch:
@@ -16,265 +16,250 @@ on:
       server_name:
         description: '📝 نام سرور | Server Name'
         required: true
-        default: 'mahdi-dev-workspace'
+        default: 'MahdiArts'
         type: string
-
+        
       region:
-        description: '🌍 منطقه | Region (🚀 fra1 بهترین برای ایران)'
+        description: '🌍 منطقه جغرافیایی | Region'
         required: true
         default: 'fra1'
         type: choice
         options:
-          - fra1
-          - ams3
-          - lon1
-          - nyc1
-          - sfo3
-          - sgp1
-
+          - 'fra1 - 🌐 Frankfurt (بهترین برای ایران)'
+          - 'ams3 - 🌐 Amsterdam (هلند)'
+          - 'lon1 - 🌐 London (انگلیس)'
+          - 'nyc1 - 🌐 New York (نیویورک)'
+          - 'sfo3 - 🌐 San Francisco (کالیفرنیا)'
+          - 'sgp1 - 🌐 Singapore (آسیا)'
+          
       size_slug:
         description: '💪 پلن سرور | Server Plan'
         required: true
-        default: 'm-8vcpu-64gb'
+        default: 's-4vcpu-8gb-intel'
         type: choice
         options:
-          - s-2vcpu-4gb
-          - s-4vcpu-8gb
-          - m-8vcpu-64gb
-          - m-16vcpu-128gb
-          - m-24vcpu-192gb
-          - m-32vcpu-256gb
-
-      enable_ipv6:
-        description: '🌐 فعال‌سازی IPv6 | Enable IPv6'
-        required: false
-        default: 'true'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
-
-      enable_backups:
-        description: '💾 فعال‌سازی نیربه | Enable Backups (Extra Cost)'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'true'
-          - 'false'
-
-      custom_tags:
-        description: '🏷️ برچسب‌های سفارشی | Custom Tags (comma-separated)'
-        required: false
-        default: 'github-actions,development'
-        type: string
+          - '🌱 s-2vcpu-4gb-intel - 2 معمولی: CPU, 4GB RAM ($26/mo)'
+          - '🔥 s-4vcpu-8gb-intel - 4 قدرتمند: CPU, 8GB RAM ($52/mo)'
+          - '👑 m-2vcpu-16gb - 2 خیلی قدرتمند: CPU, 16GB RAM ($98/mo)'
+          - '🚀 m-8vcpu-64gb-intel - 8 فوق‌العاده: CPU, 64GB RAM ($435/mo)'
+          - '⚡ m-16vcpu-128gb-intel - 32 معمولی: CPU, 256GB RAM ($1740/mo)'
 
 jobs:
-  validate:
-    name: ✅ Validate & Prepare
+  create-server:
+    name: 🏗️ ایجاد سرور
     runs-on: ubuntu-latest
-    timeout-minutes: 5
-    outputs:
-      ssh_key_id: ${{ steps.get_ssh_key.outputs.ssh_key_id }}
-      monthly_cost: ${{ steps.calc_cost.outputs.monthly }}
-
+    timeout-minutes: 30
+    
     steps:
-      - name: 📥 Checkout
+      - name: 📥 دریافت کد
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
-      - name: ✅ Validate Secrets
-        run: |
-          echo "🔍 Validating secrets..."
-          [ -n "${{ secrets.DO_API_TOKEN }}" ] || { echo "❌ DO_API_TOKEN missing"; exit 1; }
-          [ -n "${{ secrets.SSH_KEY_NAME }}" ] || { echo "❌ SSH_KEY_NAME missing"; exit 1; }
-          echo "✅ Secrets valid"
-
-      - name: 🔧 Install Tools
+      - name: 🔧 نصب ابزارها
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y jq curl bc 2>&1 | tail -1
+          sudo apt-get install -y jq curl bc
+          echo "✅ ابزارها نصب شدند"
 
-      - name: 🔑 Get SSH Key ID
-        id: get_ssh_key
+      - name: 🔑 دریافت SSH Key ID
+        id: ssh_key
         run: |
+          echo "🔍 جستجوی SSH Key..."
+          
           response=$(curl -s -X GET \
             -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
+            -H "Content-Type: application/json" \
             "https://api.digitalocean.com/v2/account/keys")
           
-          ssh_id=$(echo "$response" | jq -r ".ssh_keys[] | select(.name==\"${{ secrets.SSH_KEY_NAME }}\") | .id")
+          ssh_key_id=$(echo "$response" | jq -r '.ssh_keys[] | select(.name=="${{ secrets.SSH_KEY_NAME }}") | .id')
           
-          if [ -z "$ssh_id" ] || [ "$ssh_id" = "null" ]; then
-            echo "❌ SSH Key not found: ${{ secrets.SSH_KEY_NAME }}"
+          if [ -z "$ssh_key_id" ] || [ "$ssh_key_id" = "null" ]; then
+            echo "❌ SSH Key پیدا نشد: ${{ secrets.SSH_KEY_NAME }}"
             exit 1
           fi
           
-          echo "ssh_key_id=$ssh_id" >> $GITHUB_OUTPUT
-          echo "✅ SSH Key found"
+          echo "ssh_key_id=$ssh_key_id" >> $GITHUB_OUTPUT
+          echo "✅ SSH Key پیدا شد: $ssh_key_id"
 
-      - name: 💰 Calculate Cost
-        id: calc_cost
+      - name: 🌍 استخراج Region Code
+        id: region
         run: |
-          case "${{ github.event.inputs.size_slug }}" in
-            s-2vcpu-4gb) echo "monthly=26" ;;
-            s-4vcpu-8gb) echo "monthly=52" ;;
-            m-8vcpu-64gb) echo "monthly=435" ;;
-            m-16vcpu-128gb) echo "monthly=870" ;;
-            m-24vcpu-192gb) echo "monthly=1305" ;;
-            m-32vcpu-256gb) echo "monthly=1740" ;;
-          esac >> $GITHUB_OUTPUT
+          region_input="${{ github.event.inputs.region }}"
+          region_code=$(echo "$region_input" | cut -d' ' -f1)
+          echo "region_code=$region_code" >> $GITHUB_OUTPUT
+          echo "✅ Region: $region_code"
 
-  create:
-    name: 🏗️ Create Server
-    needs: validate
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    outputs:
-      droplet_id: ${{ steps.create.outputs.droplet_id }}
-      server_ip: ${{ steps.get_info.outputs.ipv4 }}
+      - name: 💪 استخراج Size Slug
+        id: size
+        run: |
+          size_input="${{ github.event.inputs.size_slug }}"
+          size_code=$(echo "$size_input" | cut -d' ' -f2)
+          echo "size_code=$size_code" >> $GITHUB_OUTPUT
+          echo "✅ Size: $size_code"
 
-    steps:
-      - name: 🔨 Install Tools
-        run: sudo apt-get install -y jq curl 2>&1 | tail -1
-
-      - name: 🏗️ Create Droplet
+      - name: 🏗️ ایجاد Droplet
         id: create
-        timeout-minutes: 3
         run: |
-          echo "🏗️ Creating Droplet..."
+          echo "🏗️ در حال ایجاد سرور..."
           
-          payload=$(cat <<'EOF'
-{
-  "name": "${{ github.event.inputs.server_name }}",
-  "region": "${{ github.event.inputs.region }}",
-  "size": "${{ github.event.inputs.size_slug }}",
-  "image": "ubuntu-24-04-x64",
-  "ssh_keys": [${{ needs.validate.outputs.ssh_key_id }}],
-  "backups": ${{ github.event.inputs.enable_backups }},
-  "ipv6": ${{ github.event.inputs.enable_ipv6 }},
-  "monitoring": true,
-  "tags": ["${{ github.event.inputs.custom_tags }}".split(",")]
-}
-EOF
-          )
-          
-          response=$(curl -s -w "\n%{http_code}" -X POST \
+          response=$(curl -s -X POST \
             -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
             -H "Content-Type: application/json" \
-            -d "$payload" \
+            -d '{
+              "name": "${{ github.event.inputs.server_name }}",
+              "region": "${{ steps.region.outputs.region_code }}",
+              "size": "${{ steps.size.outputs.size_code }}",
+              "image": "ubuntu-24-04-x64",
+              "ssh_keys": [${{ steps.ssh_key.outputs.ssh_key_id }}],
+              "backups": false,
+              "ipv6": true,
+              "monitoring": true,
+              "tags": ["github-actions", "mahdiarts", "automated"]
+            }' \
             "https://api.digitalocean.com/v2/droplets")
           
-          http_code=$(echo "$response" | tail -1)
-          body=$(echo "$response" | sed '$d')
+          droplet_id=$(echo "$response" | jq -r '.droplet.id')
           
-          [ "$http_code" = "201" ] || { echo "❌ Creation failed"; exit 1; }
+          if [ -z "$droplet_id" ] || [ "$droplet_id" = "null" ]; then
+            echo "❌ خطا در ایجاد سرور"
+            echo "$response" | jq .
+            exit 1
+          fi
           
-          droplet_id=$(echo "$body" | jq -r '.droplet.id')
           echo "droplet_id=$droplet_id" >> $GITHUB_OUTPUT
-          echo "✅ Droplet created: $droplet_id"
+          echo "✅ سرور ایجاد شد - Droplet ID: $droplet_id"
 
-      - name: ⏳ Wait for Activation
-        timeout-minutes: 12
+      - name: ⏳ انتظار برای فعال‌سازی
         run: |
           droplet_id="${{ steps.create.outputs.droplet_id }}"
-          echo "⏳ Waiting for activation..."
+          echo "⏳ انتظار برای فعال‌سازی سرور..."
           
-          for i in {0..50}; do
-            status=$(curl -s -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
-              "https://api.digitalocean.com/v2/droplets/$droplet_id" | jq -r '.droplet.status')
+          for i in {1..60}; do
+            response=$(curl -s -X GET \
+              -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
+              "https://api.digitalocean.com/v2/droplets/$droplet_id")
             
-            [ "$status" = "active" ] && { echo "✅ Active"; exit 0; }
-            printf "\r[%3d%%] Status: %-8s" "$((i*2))" "$status"
-            sleep 12
+            status=$(echo "$response" | jq -r '.droplet.status')
+            
+            if [ "$status" = "active" ]; then
+              echo "✅ سرور فعال شد!"
+              exit 0
+            fi
+            
+            echo "[$i/60] وضعیت: $status - صبر کنید..."
+            sleep 10
           done
           
-          echo "\n❌ Timeout"
+          echo "❌ تایم‌اوت: سرور فعال نشد"
           exit 1
 
-      - name: 📊 Get Info
-        id: get_info
+      - name: 📊 دریافت اطلاعات سرور
+        id: info
         run: |
-          data=$(curl -s -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
-            "https://api.digitalocean.com/v2/droplets/${{ steps.create.outputs.droplet_id }}")
+          droplet_id="${{ steps.create.outputs.droplet_id }}"
           
-          ipv4=$(echo "$data" | jq -r '.droplet.networks.v4[] | select(.type=="public") | .ip_address' | head -1)
+          response=$(curl -s -X GET \
+            -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
+            "https://api.digitalocean.com/v2/droplets/$droplet_id")
+          
+          ipv4=$(echo "$response" | jq -r '.droplet.networks.v4[0].ip_address')
+          ipv6=$(echo "$response" | jq -r '.droplet.networks.v6[0].ip_address // "N/A"')
+          
           echo "ipv4=$ipv4" >> $GITHUB_OUTPUT
-          echo "$ipv4" > .droplet_ip
-          echo "✅ IP: $ipv4"
+          echo "ipv6=$ipv6" >> $GITHUB_OUTPUT
+          
+          echo "✅ IP Address (IPv4): $ipv4"
+          echo "✅ IP Address (IPv6): $ipv6"
 
-      - name: 🏥 Health Check
-        timeout-minutes: 5
+      - name: 🏥 بررسی سلامت سرور
         run: |
-          ip="${{ steps.get_info.outputs.ipv4 }}"
-          for i in {1..10}; do
-            timeout 3 bash -c "echo >/dev/tcp/$ip/22" 2>/dev/null && exit 0
-            echo "⏳ SSH attempt $i/10"
-            sleep 3
+          ip="${{ steps.info.outputs.ipv4 }}"
+          echo "🏥 بررسی دسترسی SSH به سرور..."
+          
+          for i in {1..20}; do
+            if timeout 3 bash -c "echo > /dev/tcp/$ip/22" 2>/dev/null; then
+              echo "✅ سرور آماده است! SSH در دسترس."
+              exit 0
+            fi
+            echo "[$i/20] انتظار برای SSH..."
+            sleep 5
           done
-          echo "⚠️ SSH not yet available"
+          
+          echo "⚠️ SSH هنوز در دسترس نیست (ممکن است چند دقیقه طول بکشد)"
 
-      - name: 💾 Save Info
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: server-${{ steps.create.outputs.droplet_id }}
-          path: .droplet_ip
-          retention-days: 30
-
-  summary:
-    name: 📋 Summary
-    needs: [validate, create]
-    runs-on: ubuntu-latest
-    if: always()
-
-    steps:
-      - name: 🌟 Success Summary
-        if: success()
+      - name: 📋 نمایش خلاصه
         run: |
           cat >> $GITHUB_STEP_SUMMARY << 'EOF'
-          # 🎉 Server Created Successfully!
+          # 🎉 سرور با موفقیت ایجاد شد!
           
-          ## 📋 Configuration
+          ## 📊 مشخصات سرور
           
-          | 💫 Parameter | 📄 Value |
-          |---|---|
-          | **Server Name** | `${{ github.event.inputs.server_name }}` |
-          | **Droplet ID** | `${{ needs.create.outputs.droplet_id }}` |
-          | **IP Address** | `${{ needs.create.outputs.server_ip }}` |
-          | **Region** | `${{ github.event.inputs.region }}` |
-          | **Plan** | `${{ github.event.inputs.size_slug }}` |
-          | **Monthly Cost** | `${{ needs.validate.outputs.monthly_cost }}$` |
-          | **IPv6** | ${{ github.event.inputs.enable_ipv6 }} |
-          | **Backups** | ${{ github.event.inputs.enable_backups }} |
+          | 🔷 پارامتر | 📄 مقدار |
+          |-----------|----------|
+          | **🏷️ نام سرور** | `${{ github.event.inputs.server_name }}` |
+          | **🆔 Droplet ID** | `${{ steps.create.outputs.droplet_id }}` |
+          | **🌐 IP Address (IPv4)** | `${{ steps.info.outputs.ipv4 }}` |
+          | **🌐 IP Address (IPv6)** | `${{ steps.info.outputs.ipv6 }}` |
+          | **🗺️ Region** | `${{ steps.region.outputs.region_code }}` |
+          | **💪 Server Plan** | `${{ steps.size.outputs.size_code }}` |
           
-          ## 🔗 Connection Command
+          ## 🔗 اتصال به سرور
           
+          ### SSH Access:
           ```bash
-          ssh root@${{ needs.create.outputs.server_ip }}
+          ssh root@${{ steps.info.outputs.ipv4 }}
           ```
           
-          ## ⚠️ Important Notes
+          ## 🎯 مراحل بعدی
           
-          - ⏳ Installation takes 5-20 minutes
-          - 🔑 SSH key authentication is configured
-          - 🗑 **Remember to delete the server when done!**
+          ### نصب KASM Workspace:
+          ```bash
+          cd /tmp
+          curl -O https://kasm-static-content.s3.amazonaws.com/kasm_release_1.15.0.06fdc8.tar.gz
+          tar -xf kasm_release_1.15.0.06fdc8.tar.gz
+          sudo bash kasm_release/install.sh
+          ```
+          
+          **پس از نصب KASM:**
+          - 🌐 آدرس: `https://${{ steps.info.outputs.ipv4 }}`
+          - 👤 Username: `admin@kasm.local`
+          - 🔑 Password: در output نصب نمایش داده می‌شود
+          
+          ### نصب RustDesk Server:
+          ```bash
+          wget https://raw.githubusercontent.com/rustdesk/rustdesk-server/master/install.sh
+          chmod +x install.sh
+          ./install.sh
+          ```
+          
+          **پس از نصب RustDesk:**
+          - 🌐 سرور: `${{ steps.info.outputs.ipv4 }}`
+          - 🔑 Key: در فایل `/var/log/rustdesk-server/` موجود است
+          
+          ## ⚠️ نکات مهم
+          
+          - ⏳ نصب کامل ممکن است 5-20 دقیقه طول بکشد
+          - 🔐 احراز هویت SSH با کلید عمومی پیکربندی شده است
+          - 💰 **هزینه سرور به صورت ساعتی محاسبه می‌شود**
+          - 🗑️ **فراموش نکنید سرور را پس از استفاده حذف کنید!**
+          
+          ## 🔗 لینک‌های مفید
+          
+          - [DigitalOcean Dashboard](https://cloud.digitalocean.com/droplets)
+          - [KASM Documentation](https://kasmweb.com/docs/latest/)
+          - [RustDesk Documentation](https://rustdesk.com/docs/)
           
           ---
-          **✨ Ready to use!**
+          
+          ✨ **سرور شما آماده استفاده است!** ✨
+          
+          *ساخته شده با ❤️ توسط MahdiArts*
           EOF
 
-      - name: ❌ Failure Summary
-        if: failure()
-        run: |
-          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
-          # ❌ Creation Failed
-          
-          Please check:
-          1. ✅ Secrets are configured
-          2. ✅ SSH Key exists in DigitalOcean
-          3. ✅ Account has available quota
-          4. ✅ Region supports the selected plan
-          
-          **Check logs above for details.**
-          EOF
+      - name: 💾 ذخیره اطلاعات سرور
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: server-info-${{ steps.create.outputs.droplet_id }}
+          path: |
+            ${{ steps.info.outputs.ipv4 }}
+          retention-days: 30
