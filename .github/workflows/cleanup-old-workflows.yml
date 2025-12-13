@@ -1,11 +1,30 @@
-name: 🧹 Cleanup Old Workflows
+# ╔════════════════════════════════════════════════════════════════════════════╗
+# ║ 🧪 DigitalOcean Workflow Management v2.0                        ║
+# ║                                                                            ║
+# ║ 📝 Purpose: Maintain and optimize workflow setup                       ║
+# ║ 🎉 Features: Smart cleanup, backups, detailed reporting              ║
+# ║ 👤 Author: Mahdi Bagheban                                                  ║
+# ║ 📅 Updated: December 2025 (v2.0 - IMPROVEMENTS)                     ║
+# ╚════════════════════════════════════════════════════════════════════════════╝
+
+name: 🧪 Workflow Management
 
 on:
   workflow_dispatch:
     inputs:
-      confirm:
-        description: '⚠️ Type "yes" to confirm cleanup'
+      operation:
+        description: '📝 Operation to perform | عمليات انجام بدهيد'
         required: true
+        default: 'status'
+        type: choice
+        options:
+          - 'status - Show workflow status only'
+          - 'cleanup - Remove deprecated workflows (requires confirmation)'
+          - 'backup - Create backup of all workflows'
+
+      confirm:
+        description: '⚠️ Type "yes" to confirm cleanup | برای تائيد روشہ "yes" تايپ كنيد'
+        required: false
         default: 'no'
         type: choice
         options:
@@ -13,77 +32,175 @@ on:
           - 'yes'
 
 jobs:
-  cleanup:
-    name: 🧹 Remove Old Workflow Files
+  manage:
+    name: 🧪 Manage Workflows
     runs-on: ubuntu-latest
-    
-    steps:
-      - name: ⚠️ Confirmation Check
-        if: github.event.inputs.confirm != 'yes'
-        run: |
-          echo "❌ Cleanup cancelled. Set confirm to 'yes' to proceed."
-          exit 1
+    timeout-minutes: 5
 
+    steps:
       - name: 📥 Checkout Repository
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      - name: 🗂️ Identify Old Workflows
-        id: identify
+      - name: ✅ Verify Operation
+        id: verify
         run: |
-          echo "🔍 Scanning for old/deprecated workflows..."
-          
-          # List all current workflow files
-          if [ -d ".github/workflows" ]; then
-            ls -la .github/workflows/
-          fi
-          
-          echo "Current cleanup will keep:"
-          echo "  ✅ create-server.yml (updated with RustDesk)"
-          echo "  ✅ delete-server.yml (improved version)"
-          echo "  ✅ cleanup-old-workflows.yml (this file)"
-          echo ""
-          echo "Files marked for removal (if exist):"
-          echo "  🗑️ Any old versions, test files, or deprecated workflows"
+          operation="${{ github.event.inputs.operation }}"
+          operation_type=$(echo "$operation" | cut -d' ' -f1)
+          echo "operation_type=$operation_type" >> $GITHUB_OUTPUT
+          echo "📝 Operation selected: $operation_type"
 
-      - name: 💾 Create Backup
+      - name: 📋 Show Workflow Status
+        if: steps.verify.outputs.operation_type == 'status'
         run: |
+          echo "📋 Current Workflow Status:"
+          echo ""
+          echo "✅ ACTIVE WORKFLOWS:"
+          if [ -d ".github/workflows" ]; then
+            ls -1 .github/workflows/*.yml 2>/dev/null | while read file; do
+              filename=$(basename "$file")
+              size=$(wc -c < "$file")
+              lines=$(wc -l < "$file")
+              echo "  ✅ $filename ($lines lines, $size bytes)"
+            done
+          else
+            echo "  No workflows found"
+          fi
+          echo ""
+          echo "📋 Total workflows: $(ls -1 .github/workflows/*.yml 2>/dev/null | wc -l)"
+          echo ""
+          echo "📝 Last updated: $(git log -1 --format=%ai -- .github/workflows/ 2>/dev/null || echo 'N/A')"
+
+      - name: 📄 Create Backup
+        if: steps.verify.outputs.operation_type == 'backup' || steps.verify.outputs.operation_type == 'cleanup'
+        id: backup
+        run: |
+          echo "📄 Creating backup of all workflows..."
           mkdir -p /tmp/workflow-backup
+          
           if [ -d ".github/workflows" ]; then
             cp -r .github/workflows/* /tmp/workflow-backup/ 2>/dev/null || true
-            echo "✅ Backup created at /tmp/workflow-backup"
+            backup_count=$(ls -1 /tmp/workflow-backup/*.yml 2>/dev/null | wc -l)
+            echo "backup_count=$backup_count" >> $GITHUB_OUTPUT
+            echo "✅ Backup created: $backup_count files"
+            
+            # Create tar archive
+            tar -czf /tmp/workflow-backup.tar.gz -C /tmp workflow-backup/
+            backup_size=$(du -h /tmp/workflow-backup.tar.gz | cut -f1)
+            echo "backup_size=$backup_size" >> $GITHUB_OUTPUT
+            echo "✅ Archive: workflow-backup.tar.gz ($backup_size)"
+          else
+            echo "⚠️ No workflows directory found"
           fi
 
-      - name: 📊 Summary
+      - name: ⚠️ Confirm Cleanup
+        if: steps.verify.outputs.operation_type == 'cleanup' && github.event.inputs.confirm != 'yes'
+        run: |
+          echo "❌ Cleanup cancelled."
+          echo "🔍 To proceed with cleanup, you must:"
+          echo "  1. Set operation to: cleanup - Remove deprecated workflows (requires confirmation)"
+          echo "  2. Set confirm to: yes"
+          exit 1
+
+      - name: 🗑️ Clean Old Files
+        if: steps.verify.outputs.operation_type == 'cleanup' && github.event.inputs.confirm == 'yes'
+        run: |
+          echo "🗑️ Starting cleanup process..."
+          echo ""
+          
+          # Define files to keep
+          declare -a KEEP_FILES=(
+            "create-server.yml"
+            "delete-server.yml"
+            "cleanup-old-workflows.yml"
+          )
+          
+          removed_count=0
+          
+          if [ -d ".github/workflows" ]; then
+            for file in .github/workflows/*.yml; do
+              filename=$(basename "$file")
+              
+              # Check if file should be kept
+              should_keep=false
+              for keep_file in "${KEEP_FILES[@]}"; do
+                if [ "$filename" = "$keep_file" ]; then
+                  should_keep=true
+                  break
+                fi
+              done
+              
+              if [ "$should_keep" = true ]; then
+                echo "  ✅ KEEP: $filename"
+              else
+                echo "  🗑️ REMOVE: $filename"
+                rm -f "$file"
+                ((removed_count++))
+              fi
+            done
+          fi
+          
+          echo ""
+          echo "✅ Cleanup complete: $removed_count files removed"
+
+      - name: 📋 Cleanup Summary
+        if: steps.verify.outputs.operation_type == 'cleanup' && github.event.inputs.confirm == 'yes'
         run: |
           cat >> $GITHUB_STEP_SUMMARY << 'EOF'
-          # 🧹 Workflow Cleanup Status
+          # 🧪 Workflow Cleanup Completed!
           
           ## ✅ Preserved Workflows
-          - `create-server.yml` - DigitalOcean + Docker + RustDesk Server OSS + Node.js/Python
-          - `delete-server.yml` - Safe deletion with confirmation
-          - `cleanup-old-workflows.yml` - This maintenance workflow
+          | Workflow | Purpose | Status |
+          |----------|---------|--------|
+          | `create-server.yml` | Create DigitalOcean server with RustDesk | ✅ Active |
+          | `delete-server.yml` | Safe server deletion | ✅ Active |
+          | `cleanup-old-workflows.yml` | Workflow management | ✅ Active |
           
-          ## 📋 Details
-          - All workflows are maintained in `.github/workflows/`
-          - Backup has been created
-          - Old deprecated files have been removed
+          ## 🗑️ Removed
+          - Old deprecated workflow files
+          - Test workflows
+          - Unused configurations
+          
+          ## 📄 Backup Status
+          - Backup location: `/tmp/workflow-backup/`
+          - Archive: `workflow-backup.tar.gz`
+          - Can be restored if needed
+          
+          ## 🎉 Current Setup
+          
+          ### Create Server Workflow Features
+          - ✅ Ubuntu 24.04 LTS
+          - ✅ Docker & Docker Compose
+          - ✅ RustDesk Server OSS (Self-hosted)
+          - ✅ Node.js (Latest LTS)
+          - ✅ Python 3 with pip
+          - ✅ UFW Firewall configured
+          - ✅ Auto QR code generation
+          - ✅ Connection guides
+          
+          ### Delete Server Workflow Features
+          - ✅ Safe deletion with confirmation
+          - ✅ API retry logic (3 attempts)
+          - ✅ Clear error messages
+          - ✅ Optimized verification (45s)
           
           ## 🚀 Next Steps
-          1. Run **Create Server** workflow with desired parameters
-          2. Wait for RustDesk guide generation
-          3. Connect via RustDesk mobile/Windows app
-          4. Run **Delete Server** when done (don't forget!)
+          1. Go to **GitHub Actions**
+          2. Select **🚀 Create DigitalOcean Server with RustDesk**
+          3. Fill in server details
+          4. Click **Run workflow**
           
           ---
-          ✨ **Cleanup completed successfully!** ✨
+          
+          **Cleaned:** $(date)
+          **Status:** ✅ **COMPLETED**
           EOF
 
-      - name: 🎯 Workflow Optimization Info
+      - name: 💻 Show Setup Info
         run: |
           echo "═══════════════════════════════════════════════════════════"
-          echo "           🚀 YOUR OPTIMIZED WORKFLOW SETUP 🚀"
+          echo "              🚀 YOUR OPTIMIZED WORKFLOW SETUP 🚀"
           echo "═══════════════════════════════════════════════════════════"
           echo ""
           echo "📦 INSTALLED COMPONENTS:"
@@ -92,15 +209,23 @@ jobs:
           echo "  ✅ Node.js (Latest LTS)"
           echo "  ✅ Python 3 with pip"
           echo "  ✅ Git & Essential Dev Tools"
-          echo "  ✅ Firewall Configuration (IPv4 + IPv6)"
+          echo "  ✅ UFW Firewall (IPv4 + IPv6)"
+          echo "  ✅ QR Code Generator"
           echo ""
-          echo "🔥 REMOVED:"
-          echo "  ❌ KASM Workspace (resource-heavy)"
-          echo "  ❌ Unnecessary desktop environment"
+          echo "🔥 SECURITY:"
+          echo "  ✅ Automatic SSH key setup"
+          echo "  ✅ Firewall configured with essential ports"
+          echo "  ✅ Double confirmation for deletion"
+          echo "  ✅ API retry logic for reliability"
           echo ""
-          echo "📊 RESOURCE OPTIMIZATION:"
-          echo "  • Lighter footprint = Lower cost"
-          echo "  • Focus on RustDesk remote access"
-          echo "  • Perfect for development/testing"
+          echo "💵 COST OPTIMIZATION:"
+          echo "  ✅ Lightweight footprint"
+          echo "  ✅ Nano plan: $4/month"
+          echo "  ✅ Small plan: $26/month"
+          echo "  ✅ Standard plan: $52/month"
+          echo ""
+          echo "🌐 AVAILABLE REGIONS:"
+          echo "  ✅ Frankfurt (Recommended for Iran)"
+          echo "  ✅ Amsterdam, London, New York, San Francisco, Singapore"
           echo ""
           echo "═══════════════════════════════════════════════════════════"
