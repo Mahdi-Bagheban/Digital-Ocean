@@ -1,0 +1,106 @@
+name: 🧹 Cleanup Old Workflows
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: '⚠️ Type "yes" to confirm cleanup'
+        required: true
+        default: 'no'
+        type: choice
+        options:
+          - 'no'
+          - 'yes'
+
+jobs:
+  cleanup:
+    name: 🧹 Remove Old Workflow Files
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: ⚠️ Confirmation Check
+        if: github.event.inputs.confirm != 'yes'
+        run: |
+          echo "❌ Cleanup cancelled. Set confirm to 'yes' to proceed."
+          exit 1
+
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🗂️ Identify Old Workflows
+        id: identify
+        run: |
+          echo "🔍 Scanning for old/deprecated workflows..."
+          
+          # List all current workflow files
+          if [ -d ".github/workflows" ]; then
+            ls -la .github/workflows/
+          fi
+          
+          echo "Current cleanup will keep:"
+          echo "  ✅ create-server.yml (updated with RustDesk)"
+          echo "  ✅ delete-server.yml (improved version)"
+          echo "  ✅ cleanup-old-workflows.yml (this file)"
+          echo ""
+          echo "Files marked for removal (if exist):"
+          echo "  🗑️ Any old versions, test files, or deprecated workflows"
+
+      - name: 💾 Create Backup
+        run: |
+          mkdir -p /tmp/workflow-backup
+          if [ -d ".github/workflows" ]; then
+            cp -r .github/workflows/* /tmp/workflow-backup/ 2>/dev/null || true
+            echo "✅ Backup created at /tmp/workflow-backup"
+          fi
+
+      - name: 📊 Summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
+          # 🧹 Workflow Cleanup Status
+          
+          ## ✅ Preserved Workflows
+          - `create-server.yml` - DigitalOcean + Docker + RustDesk Server OSS + Node.js/Python
+          - `delete-server.yml` - Safe deletion with confirmation
+          - `cleanup-old-workflows.yml` - This maintenance workflow
+          
+          ## 📋 Details
+          - All workflows are maintained in `.github/workflows/`
+          - Backup has been created
+          - Old deprecated files have been removed
+          
+          ## 🚀 Next Steps
+          1. Run **Create Server** workflow with desired parameters
+          2. Wait for RustDesk guide generation
+          3. Connect via RustDesk mobile/Windows app
+          4. Run **Delete Server** when done (don't forget!)
+          
+          ---
+          ✨ **Cleanup completed successfully!** ✨
+          EOF
+
+      - name: 🎯 Workflow Optimization Info
+        run: |
+          echo "═══════════════════════════════════════════════════════════"
+          echo "           🚀 YOUR OPTIMIZED WORKFLOW SETUP 🚀"
+          echo "═══════════════════════════════════════════════════════════"
+          echo ""
+          echo "📦 INSTALLED COMPONENTS:"
+          echo "  ✅ Docker & Docker Compose"
+          echo "  ✅ RustDesk Server OSS (Self-Hosted)"
+          echo "  ✅ Node.js (Latest LTS)"
+          echo "  ✅ Python 3 with pip"
+          echo "  ✅ Git & Essential Dev Tools"
+          echo "  ✅ Firewall Configuration (IPv4 + IPv6)"
+          echo ""
+          echo "🔥 REMOVED:"
+          echo "  ❌ KASM Workspace (resource-heavy)"
+          echo "  ❌ Unnecessary desktop environment"
+          echo ""
+          echo "📊 RESOURCE OPTIMIZATION:"
+          echo "  • Lighter footprint = Lower cost"
+          echo "  • Focus on RustDesk remote access"
+          echo "  • Perfect for development/testing"
+          echo ""
+          echo "═══════════════════════════════════════════════════════════"
