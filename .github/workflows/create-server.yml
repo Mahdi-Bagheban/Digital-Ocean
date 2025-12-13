@@ -1,86 +1,91 @@
 # ╔════════════════════════════════════════════════════════════════════════════╗
-# ║ 🚀 DigitalOcean Server Automation Workflow ║
+# ║ 🚀 DigitalOcean Server + RustDesk Server OSS Automation Workflow v10.0     ║
+# ║                                                                            ║
+# ║ 📝 Purpose: Complete server setup with RustDesk remote access             ║
+# ║ 🎉 Features: Docker + RustDesk + Node.js + Python + Auto-Guide Generation ║
+# ║ 👤 Author: Mahdi Bagheban                                                  ║
+# ║ 📅 Updated: December 2025                                                 ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
-#
-# 📝 Purpose: اتوماسیون کامل ایجاد و مدیریت سرورهای DigitalOcean
-# 🚀 Version: 8.0 (Production Ready - MahdiArts Edition)
-# 🎉 Features: KASM Workspace + RustDesk Server + Full Automation
-# 👤 Author: Mahdi Bagheban
-# 📅 Updated: December 2025
 
-name: 🚀 ایجاد سرور DigitalOcean | Create Server
+name: 🚀 Create DigitalOcean Server with RustDesk
 
 on:
   workflow_dispatch:
     inputs:
       server_name:
-        description: '📝 نام سرور | Server Name'
+        description: '📝 Server Name | نام سرور'
         required: true
-        default: 'MahdiArts'
+        default: 'rustdesk-server'
         type: string
-        
+
       region:
-        description: '🌍 منطقه جغرافیایی | Region'
+        description: '🌍 Region | منطقه جغرافیایی'
         required: true
         default: 'fra1'
         type: choice
         options:
-          - 'fra1 - 🌐 Frankfurt (بهترین برای ایران)'
-          - 'ams3 - 🌐 Amsterdam (هلند)'
-          - 'lon1 - 🌐 London (انگلیس)'
-          - 'nyc1 - 🌐 New York (نیویورک)'
-          - 'sfo3 - 🌐 San Francisco (کالیفرنیا)'
-          - 'sgp1 - 🌐 Singapore (آسیا)'
-          
+          - 'fra1 - 🇩🇪 Frankfurt (بهترین برای ایران)'
+          - 'ams3 - 🇳🇱 Amsterdam (هلند)'
+          - 'lon1 - 🇬🇧 London (انگلیس)'
+          - 'nyc1 - 🇺🇸 New York (آمریکا)'
+          - 'sfo3 - 🇺🇸 San Francisco (کالیفرنیا)'
+          - 'sgp1 - 🇸🇬 Singapore (آسیا)'
+
       size_slug:
-        description: '💪 پلن سرور | Server Plan'
+        description: '💪 Server Plan | پلن سرور'
         required: true
-        default: 's-4vcpu-8gb-intel'
+        default: 's-2vcpu-4gb-intel'
         type: choice
         options:
-          - '🌱 s-2vcpu-4gb-intel - 2 معمولی: CPU, 4GB RAM ($26/mo)'
-          - '🔥 s-4vcpu-8gb-intel - 4 قدرتمند: CPU, 8GB RAM ($52/mo)'
-          - '👑 m-2vcpu-16gb - 2 خیلی قدرتمند: CPU, 16GB RAM ($98/mo)'
-          - '🚀 m-8vcpu-64gb-intel - 8 فوق‌العاده: CPU, 64GB RAM ($435/mo)'
-          - '⚡ m-16vcpu-128gb-intel - 32 معمولی: CPU, 256GB RAM ($1740/mo)'
+          - 's-1vcpu-512mb-10gb - 🌱 Nano ($4/mo) - فقط برای تست'
+          - 's-2vcpu-4gb-intel - 🌱 Small ($26/mo) - توصیه شده'
+          - 's-4vcpu-8gb-intel - 🔥 Standard ($52/mo)'
+          - 'm-2vcpu-16gb - 👑 High Memory ($98/mo)'
+          - 'm-8vcpu-64gb-intel - 🚀 Extra Large ($435/mo)'
 
 jobs:
   create-server:
-    name: 🏗️ ایجاد سرور
+    name: 🏗️ Create & Setup Server
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    
+    timeout-minutes: 45
+    outputs:
+      droplet_id: ${{ steps.create.outputs.droplet_id }}
+      ipv4: ${{ steps.info.outputs.ipv4 }}
+      ipv6: ${{ steps.info.outputs.ipv6 }}
+
     steps:
-      - name: 📥 دریافت کد
+      - name: 📥 Checkout Repository
         uses: actions/checkout@v4
 
-      - name: 🔧 نصب ابزارها
+      - name: 🔧 Install Required Tools
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y jq curl bc
-          echo "✅ ابزارها نصب شدند"
+          sudo apt-get install -y jq curl bc qrencode 2>&1 | grep -E "(Setting|^Get:|^Reading)" || true
+          echo "✅ Tools installed: jq, curl, bc, qrencode"
 
-      - name: 🔑 دریافت SSH Key ID
+      - name: 🔑 Get SSH Key ID
         id: ssh_key
         run: |
-          echo "🔍 جستجوی SSH Key..."
+          echo "🔍 Searching for SSH Key: ${{ secrets.SSH_KEY_NAME }}"
           
           response=$(curl -s -X GET \
             -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
             -H "Content-Type: application/json" \
             "https://api.digitalocean.com/v2/account/keys")
           
-          ssh_key_id=$(echo "$response" | jq -r '.ssh_keys[] | select(.name=="${{ secrets.SSH_KEY_NAME }}") | .id')
+          ssh_key_id=$(echo "$response" | jq -r ".ssh_keys[] | select(.name==\"${{ secrets.SSH_KEY_NAME }}\") | .id" | head -1)
           
           if [ -z "$ssh_key_id" ] || [ "$ssh_key_id" = "null" ]; then
-            echo "❌ SSH Key پیدا نشد: ${{ secrets.SSH_KEY_NAME }}"
+            echo "❌ SSH Key not found: ${{ secrets.SSH_KEY_NAME }}"
+            echo "Available SSH Keys:"
+            echo "$response" | jq -r '.ssh_keys[] | "  • \(.name) (ID: \(.id))"'
             exit 1
           fi
           
           echo "ssh_key_id=$ssh_key_id" >> $GITHUB_OUTPUT
-          echo "✅ SSH Key پیدا شد: $ssh_key_id"
+          echo "✅ SSH Key found: $ssh_key_id"
 
-      - name: 🌍 استخراج Region Code
+      - name: 📍 Extract Region Code
         id: region
         run: |
           region_input="${{ github.event.inputs.region }}"
@@ -88,18 +93,18 @@ jobs:
           echo "region_code=$region_code" >> $GITHUB_OUTPUT
           echo "✅ Region: $region_code"
 
-      - name: 💪 استخراج Size Slug
+      - name: 💾 Extract Size Code
         id: size
         run: |
           size_input="${{ github.event.inputs.size_slug }}"
-          size_code=$(echo "$size_input" | cut -d' ' -f2)
+          size_code=$(echo "$size_input" | cut -d' ' -f1)
           echo "size_code=$size_code" >> $GITHUB_OUTPUT
           echo "✅ Size: $size_code"
 
-      - name: 🏗️ ایجاد Droplet
+      - name: 🏗️ Create Droplet
         id: create
         run: |
-          echo "🏗️ در حال ایجاد سرور..."
+          echo "🏗️ Creating Droplet with Ubuntu 24.04..."
           
           response=$(curl -s -X POST \
             -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
@@ -113,25 +118,26 @@ jobs:
               "backups": false,
               "ipv6": true,
               "monitoring": true,
-              "tags": ["github-actions", "mahdiarts", "automated"]
+              "tags": ["github-actions", "rustdesk", "automated"]
             }' \
             "https://api.digitalocean.com/v2/droplets")
           
           droplet_id=$(echo "$response" | jq -r '.droplet.id')
           
           if [ -z "$droplet_id" ] || [ "$droplet_id" = "null" ]; then
-            echo "❌ خطا در ایجاد سرور"
+            echo "❌ Error creating Droplet"
             echo "$response" | jq .
             exit 1
           fi
           
           echo "droplet_id=$droplet_id" >> $GITHUB_OUTPUT
-          echo "✅ سرور ایجاد شد - Droplet ID: $droplet_id"
+          echo "✅ Droplet created - ID: $droplet_id"
 
-      - name: ⏳ انتظار برای فعال‌سازی
+      - name: ⏳ Wait for Droplet to Activate
+        id: wait
         run: |
           droplet_id="${{ steps.create.outputs.droplet_id }}"
-          echo "⏳ انتظار برای فعال‌سازی سرور..."
+          echo "⏳ Waiting for Droplet activation (max 120 seconds)..."
           
           for i in {1..60}; do
             response=$(curl -s -X GET \
@@ -141,18 +147,18 @@ jobs:
             status=$(echo "$response" | jq -r '.droplet.status')
             
             if [ "$status" = "active" ]; then
-              echo "✅ سرور فعال شد!"
+              echo "✅ Droplet is ACTIVE!"
               exit 0
             fi
             
-            echo "[$i/60] وضعیت: $status - صبر کنید..."
-            sleep 10
+            echo "[$i/60] Status: $status - Waiting..."
+            sleep 2
           done
           
-          echo "❌ تایم‌اوت: سرور فعال نشد"
+          echo "❌ Timeout: Droplet did not activate"
           exit 1
 
-      - name: 📊 دریافت اطلاعات سرور
+      - name: 📊 Get Server Information
         id: info
         run: |
           droplet_id="${{ steps.create.outputs.droplet_id }}"
@@ -161,105 +167,741 @@ jobs:
             -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
             "https://api.digitalocean.com/v2/droplets/$droplet_id")
           
-          ipv4=$(echo "$response" | jq -r '.droplet.networks.v4[0].ip_address')
+          ipv4=$(echo "$response" | jq -r '.droplet.networks.v4[] | select(.type=="public") | .ip_address' | head -1)
           ipv6=$(echo "$response" | jq -r '.droplet.networks.v6[0].ip_address // "N/A"')
           
           echo "ipv4=$ipv4" >> $GITHUB_OUTPUT
           echo "ipv6=$ipv6" >> $GITHUB_OUTPUT
           
-          echo "✅ IP Address (IPv4): $ipv4"
-          echo "✅ IP Address (IPv6): $ipv6"
+          echo "✅ IPv4: $ipv4"
+          echo "✅ IPv6: $ipv6"
 
-      - name: 🏥 بررسی سلامت سرور
+      - name: 🏥 Health Check - Wait for SSH
         run: |
           ip="${{ steps.info.outputs.ipv4 }}"
-          echo "🏥 بررسی دسترسی SSH به سرور..."
+          echo "🏥 Checking SSH availability on $ip..."
           
-          for i in {1..20}; do
+          for i in {1..30}; do
             if timeout 3 bash -c "echo > /dev/tcp/$ip/22" 2>/dev/null; then
-              echo "✅ سرور آماده است! SSH در دسترس."
+              echo "✅ SSH is ready!"
               exit 0
             fi
-            echo "[$i/20] انتظار برای SSH..."
-            sleep 5
+            echo "[$i/30] SSH not ready - waiting..."
+            sleep 4
           done
           
-          echo "⚠️ SSH هنوز در دسترس نیست (ممکن است چند دقیقه طول بکشد)"
+          echo "⚠️ SSH check timeout (server may still be initializing)"
 
-      - name: 📋 نمایش خلاصه
+      - name: 🔧 Create & Run Initialization Script
+        id: init
         run: |
-          cat >> $GITHUB_STEP_SUMMARY << 'EOF'
-          # 🎉 سرور با موفقیت ایجاد شد!
+          cat > /tmp/init-server.sh << 'INIT_SCRIPT'
+          #!/bin/bash
+          set -e
           
-          ## 📊 مشخصات سرور
+          echo "═══════════════════════════════════════════════════════════"
+          echo "🚀 INITIALIZING SERVER - RustDesk + Dev Tools Setup"
+          echo "═══════════════════════════════════════════════════════════"
           
-          | 🔷 پارامتر | 📄 مقدار |
-          |-----------|----------|
-          | **🏷️ نام سرور** | `${{ github.event.inputs.server_name }}` |
-          | **🆔 Droplet ID** | `${{ steps.create.outputs.droplet_id }}` |
-          | **🌐 IP Address (IPv4)** | `${{ steps.info.outputs.ipv4 }}` |
-          | **🌐 IP Address (IPv6)** | `${{ steps.info.outputs.ipv6 }}` |
-          | **🗺️ Region** | `${{ steps.region.outputs.region_code }}` |
-          | **💪 Server Plan** | `${{ steps.size.outputs.size_code }}` |
+          # Update system
+          echo "📦 Updating system packages..."
+          sudo apt-get update -qq
+          sudo apt-get upgrade -y -qq
+          sudo apt-get install -y curl wget git build-essential 2>&1 | tail -1
           
-          ## 🔗 اتصال به سرور
+          # Install Docker
+          echo "🐳 Installing Docker..."
+          curl -fsSL https://get.docker.com -o /tmp/get-docker.sh
+          sudo sh /tmp/get-docker.sh
+          sudo usermod -aG docker root
+          sudo systemctl start docker
+          sudo systemctl enable docker
+          echo "✅ Docker installed"
           
-          ### SSH Access:
+          # Install Node.js LTS
+          echo "📦 Installing Node.js LTS..."
+          curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+          sudo apt-get install -y nodejs 2>&1 | tail -1
+          echo "✅ Node.js $(node -v) installed"
+          
+          # Install Python 3
+          echo "🐍 Installing Python 3 with dev tools..."
+          sudo apt-get install -y python3 python3-pip python3-dev python3-venv 2>&1 | tail -1
+          echo "✅ Python $(python3 --version | cut -d' ' -f2) installed"
+          
+          # Install essential dev tools
+          echo "🛠️ Installing development tools..."
+          sudo apt-get install -y git nano vim curl wget jq htop 2>&1 | tail -1
+          
+          # Configure firewall
+          echo "🔥 Configuring UFW Firewall..."
+          sudo apt-get install -y ufw 2>&1 | tail -1
+          sudo ufw default deny incoming
+          sudo ufw default allow outgoing
+          sudo ufw allow 22/tcp
+          sudo ufw allow 80/tcp
+          sudo ufw allow 443/tcp
+          sudo ufw allow 5900/tcp  # RustDesk
+          sudo ufw allow 5901/tcp  # RustDesk
+          sudo ufw allow 21115/tcp # RustDesk
+          sudo ufw allow 21116/tcp # RustDesk
+          sudo ufw allow 21117/tcp # RustDesk
+          sudo ufw allow 21118/tcp # RustDesk
+          sudo ufw allow 21119/tcp # RustDesk
+          sudo ufw enable
+          echo "✅ Firewall configured"
+          
+          # Create rustdesk directory
+          echo "📁 Setting up RustDesk directories..."
+          sudo mkdir -p /opt/rustdesk
+          sudo mkdir -p /var/log/rustdesk
+          cd /opt/rustdesk
+          
+          # Download RustDesk Server OSS
+          echo "📥 Downloading RustDesk Server OSS..."
+          RUSTDESK_VERSION="1.41.9"
+          wget -q "https://github.com/rustdesk/rustdesk-server/releases/download/$RUSTDESK_VERSION/rustdesk-server-linux-x64.zip"
+          unzip -q rustdesk-server-linux-x64.zip
+          rm rustdesk-server-linux-x64.zip
+          
+          chmod +x hbbr hbbs
+          echo "✅ RustDesk binaries downloaded and made executable"
+          
+          # Start RustDesk services
+          echo "🚀 Starting RustDesk services..."
+          
+          # Create systemd services
+          sudo tee /etc/systemd/system/rustdesk-hbbs.service > /dev/null << 'SERVICE1'
+          [Unit]
+          Description=RustDesk Signal Server
+          After=network.target
+          
+          [Service]
+          Type=simple
+          User=root
+          WorkingDirectory=/opt/rustdesk
+          ExecStart=/opt/rustdesk/hbbs
+          Restart=on-failure
+          RestartSec=5
+          StandardOutput=journal
+          StandardError=journal
+          
+          [Install]
+          WantedBy=multi-user.target
+          SERVICE1
+          
+          sudo tee /etc/systemd/system/rustdesk-hbbr.service > /dev/null << 'SERVICE2'
+          [Unit]
+          Description=RustDesk Relay Server
+          After=network.target rustdesk-hbbs.service
+          
+          [Service]
+          Type=simple
+          User=root
+          WorkingDirectory=/opt/rustdesk
+          ExecStart=/opt/rustdesk/hbbr
+          Restart=on-failure
+          RestartSec=5
+          StandardOutput=journal
+          StandardError=journal
+          
+          [Install]
+          WantedBy=multi-user.target
+          SERVICE2
+          
+          sudo systemctl daemon-reload
+          sudo systemctl enable rustdesk-hbbs rustdesk-hbbr
+          sudo systemctl start rustdesk-hbbs rustdesk-hbbr
+          
+          echo "✅ RustDesk services started"
+          
+          # Wait for RustDesk to initialize
+          sleep 3
+          
+          # Extract key from id_ed25519.pub
+          echo "🔑 Extracting RustDesk key..."
+          if [ -f "id_ed25519.pub" ]; then
+            KEY=$(cat id_ed25519.pub | head -1)
+            echo "$KEY" > /tmp/rustdesk_key.txt
+            echo "✅ RustDesk key extracted"
+          else
+            echo "⚠️ Key file will be available after first run"
+          fi
+          
+          echo ""
+          echo "═══════════════════════════════════════════════════════════"
+          echo "✅ SERVER INITIALIZATION COMPLETED"
+          echo "═══════════════════════════════════════════════════════════"
+          echo ""
+          echo "📦 Installed Components:"
+          echo "  • Docker (container platform)"
+          echo "  • Node.js $(node -v)"
+          echo "  • Python $(python3 --version | cut -d' ' -f2)"
+          echo "  • RustDesk Server OSS (remote access)"
+          echo "  • UFW Firewall (configured & enabled)"
+          echo ""
+          echo "🔥 Open Ports:"
+          echo "  • 22 (SSH)"
+          echo "  • 80 (HTTP)"
+          echo "  • 443 (HTTPS)"
+          echo "  • 5900-5901 (RustDesk UI)"
+          echo "  • 21115-21119 (RustDesk Services)"
+          echo ""
+          echo "═══════════════════════════════════════════════════════════"
+          INIT_SCRIPT
+          
+          chmod +x /tmp/init-server.sh
+          
+          echo "🚀 Running initialization script on server..."
+          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+              -i ~/.ssh/id_rsa root@${{ steps.info.outputs.ipv4 }} \
+              'bash -s' < /tmp/init-server.sh
+          
+          echo "✅ Server initialization completed!"
+
+      - name: 🔐 Generate RustDesk Connection Key
+        id: rustdesk_key
+        run: |
+          echo "🔑 Extracting RustDesk key from server..."
+          
+          # Get the key from server
+          key=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                -i ~/.ssh/id_rsa root@${{ steps.info.outputs.ipv4 }} \
+                'cat /opt/rustdesk/id_ed25519.pub' 2>/dev/null || echo "")
+          
+          if [ -z "$key" ]; then
+            # Try to get key from server files
+            key=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+                  -i ~/.ssh/id_rsa root@${{ steps.info.outputs.ipv4 }} \
+                  'ls -la /opt/rustdesk/' 2>/dev/null | grep -oE '[A-Za-z0-9+/]+={0,2}' | head -1 || echo "KEY_WILL_BE_GENERATED")
+          fi
+          
+          echo "rustdesk_key=$key" >> $GITHUB_OUTPUT
+          echo "✅ Key: ${key:0:20}..."
+
+      - name: 📄 Generate RustDesk Connection Guide
+        id: guide
+        run: |
+          mkdir -p /tmp/guides
+          
+          ipv4="${{ steps.info.outputs.ipv4 }}"
+          ipv6="${{ steps.info.outputs.ipv6 }}"
+          server_name="${{ github.event.inputs.server_name }}"
+          
+          cat > /tmp/guides/rustdesk-connection-guide.md << "GUIDE_MD"
+          # 🚀 RustDesk Server Connection Guide
+          
+          **Server Created:** $(date)
+          
+          ---
+          
+          ## 📱 Server Information
+          
+          | Property | Value |
+          |----------|-------|
+          | **Server Name** | $server_name |
+          | **IPv4 Address** | `$ipv4` |
+          | **IPv6 Address** | `$ipv6` |
+          | **RustDesk Ports** | 5900, 5901, 21115-21119 |
+          | **SSH Access** | `ssh root@$ipv4` |
+          
+          ---
+          
+          ## 📥 Installation on Android
+          
+          ### Step 1: Download RustDesk App
+          1. Open **Google Play Store**
+          2. Search for **"RustDesk"**
+          3. Install the official RustDesk app
+          
+          ### Step 2: Add Connection
+          1. Launch RustDesk app
+          2. Tap the **"+" button** (Add Connection)
+          3. Select **"IP Address"**
+          4. Enter Server IP: `$ipv4`
+          5. Tap **"Connect"**
+          
+          ### Step 3: Connect
+          - Wait for connection prompt
+          - Accept the connection on the server side
+          - You're now remotely accessing the server!
+          
+          ---
+          
+          ## 💻 Installation on Windows
+          
+          ### Step 1: Download RustDesk
+          1. Go to [rustdesk.com](https://rustdesk.com)
+          2. Click **"Downloads"**
+          3. Download **"RustDesk.exe"** (Windows version)
+          4. Run the installer
+          5. Click **"Install"** and wait for completion
+          
+          ### Step 2: Configure Connection
+          1. Open RustDesk
+          2. In **"ID/IP"** field, enter: `$ipv4`
+          3. Leave **ID** field empty (for IP connection)
+          4. Click **"Connect"**
+          
+          ### Step 3: Enter Credentials
+          - If prompted for password, use the credentials from server setup
+          - Accept the desktop sharing request
+          - You should now see the remote desktop
+          
+          ---
+          
+          ## 🔧 Advanced: Using IPv6
+          
+          If IPv4 doesn't work, try IPv6:
+          - Android: Use `$ipv6` (with brackets if needed: `[$ipv6]`)
+          - Windows: Use `$ipv6` directly
+          
+          ---
+          
+          ## ⚙️ Configuration
+          
+          ### Custom ID/Password Method (Better Security)
+          1. Connect to server via SSH:
+             ```bash
+             ssh root@$ipv4
+             ```
+          
+          2. Configure RustDesk service for authentication
+          
+          3. Use ID-based connection for enhanced security
+          
+          ---
+          
+          ## 🚀 Server Information
+          
+          ### What's Installed
+          - **RustDesk Server OSS** - Self-hosted remote access
+          - **Docker** - Container platform
+          - **Node.js** - JavaScript runtime
+          - **Python 3** - Programming language
+          - **UFW Firewall** - Security
+          - **Ubuntu 24.04 LTS** - Operating system
+          
+          ### Open Ports
+          ```
+          22      - SSH (remote terminal)
+          80      - HTTP (web)
+          443     - HTTPS (secure web)
+          5900    - RustDesk Display
+          5901    - RustDesk Audio
+          21115   - RustDesk Service
+          21116   - RustDesk Service
+          21117   - RustDesk Service
+          21118   - RustDesk Service
+          21119   - RustDesk Service
+          ```
+          
+          ---
+          
+          ## ⏰ Important: Delete Your Server When Done!
+          
+          **Remember:** This server costs money while running!
+          
+          ### How to Delete
+          1. Go to GitHub Actions
+          2. Run **"Delete DigitalOcean Server"** workflow
+          3. Enter server name: `$server_name`
+          4. Confirm deletion
+          
+          ---
+          
+          ## 📞 Troubleshooting
+          
+          ### Connection Refused
+          - Wait 2-3 minutes after server creation
+          - RustDesk services may still be initializing
+          - Check if port 5900 is accessible: `telnet $ipv4 5900`
+          
+          ### Firewall Issues
+          - Ensure ports 5900-5901 and 21115-21119 are open
+          - Check: `sudo ufw status`
+          - Enable port: `sudo ufw allow 5900/tcp`
+          
+          ### Key/Certificate Issues
+          - Get public key: `ssh root@$ipv4 'cat /opt/rustdesk/id_ed25519.pub'`
+          - Use this key in RustDesk configuration
+          
+          ---
+          
+          **Last Updated:** $(date)
+          **Server Status:** Active ✅
+          
+          GUIDE_MD
+          
+          echo "✅ Guide generated: /tmp/guides/rustdesk-connection-guide.md"
+
+      - name: 📸 Generate QR Code
+        run: |
+          ipv4="${{ steps.info.outputs.ipv4 }}"
+          
+          # Create QR code for Android quick scan
+          qrencode -o /tmp/guides/rustdesk-qr-ipv4.png "$ipv4" -s 10 -m 2
+          
+          # Create HTML file with embedded QR codes
+          cat > /tmp/guides/rustdesk-quick-connect.html << 'QR_HTML'
+          <!DOCTYPE html>
+          <html lang="en">
+          <head>
+              <meta charset="UTF-8">
+              <meta name="viewport" content="width=device-width, initial-scale=1.0">
+              <title>RustDesk Quick Connect</title>
+              <style>
+                  * { margin: 0; padding: 0; box-sizing: border-box; }
+                  body {
+                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                      min-height: 100vh;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      padding: 20px;
+                  }
+                  .container {
+                      background: white;
+                      border-radius: 20px;
+                      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                      padding: 40px;
+                      max-width: 600px;
+                      width: 100%;
+                  }
+                  h1 {
+                      color: #333;
+                      text-align: center;
+                      margin-bottom: 10px;
+                      font-size: 28px;
+                  }
+                  .subtitle {
+                      text-align: center;
+                      color: #666;
+                      margin-bottom: 30px;
+                      font-size: 14px;
+                  }
+                  .info-box {
+                      background: #f5f5f5;
+                      padding: 20px;
+                      border-radius: 10px;
+                      margin-bottom: 30px;
+                      border-left: 4px solid #667eea;
+                  }
+                  .info-label {
+                      color: #666;
+                      font-size: 12px;
+                      font-weight: 600;
+                      text-transform: uppercase;
+                      margin-bottom: 5px;
+                  }
+                  .info-value {
+                      color: #333;
+                      font-size: 18px;
+                      font-weight: 500;
+                      font-family: 'Courier New', monospace;
+                      word-break: break-all;
+                  }
+                  .qr-section {
+                      text-align: center;
+                      margin: 40px 0;
+                  }
+                  .qr-title {
+                      color: #666;
+                      font-size: 14px;
+                      font-weight: 600;
+                      margin-bottom: 15px;
+                      text-transform: uppercase;
+                  }
+                  .qr-code {
+                      background: white;
+                      padding: 20px;
+                      border-radius: 10px;
+                      display: inline-block;
+                      border: 2px solid #f0f0f0;
+                  }
+                  .qr-code img {
+                      width: 200px;
+                      height: 200px;
+                      image-rendering: pixelated;
+                  }
+                  .instructions {
+                      background: #f0f7ff;
+                      padding: 20px;
+                      border-radius: 10px;
+                      margin-top: 30px;
+                      border-left: 4px solid #667eea;
+                  }
+                  .instructions h3 {
+                      color: #333;
+                      margin-bottom: 10px;
+                      font-size: 14px;
+                  }
+                  .instructions ol {
+                      color: #666;
+                      padding-left: 20px;
+                      font-size: 13px;
+                      line-height: 1.8;
+                  }
+                  .step {
+                      margin-bottom: 8px;
+                  }
+                  .platform {
+                      margin-top: 30px;
+                      display: grid;
+                      grid-template-columns: 1fr 1fr;
+                      gap: 15px;
+                  }
+                  .platform-box {
+                      background: #f9f9f9;
+                      padding: 15px;
+                      border-radius: 10px;
+                      text-align: center;
+                      border: 2px solid #e0e0e0;
+                  }
+                  .platform-icon {
+                      font-size: 32px;
+                      margin-bottom: 10px;
+                  }
+                  .platform-name {
+                      color: #333;
+                      font-weight: 600;
+                      font-size: 14px;
+                  }
+                  .platform-desc {
+                      color: #999;
+                      font-size: 12px;
+                      margin-top: 5px;
+                  }
+                  .footer {
+                      text-align: center;
+                      color: #999;
+                      font-size: 12px;
+                      margin-top: 30px;
+                      padding-top: 20px;
+                      border-top: 1px solid #e0e0e0;
+                  }
+                  .warning {
+                      background: #fff3cd;
+                      border-left: 4px solid #ffc107;
+                      padding: 15px;
+                      border-radius: 5px;
+                      color: #856404;
+                      margin: 20px 0;
+                      font-size: 13px;
+                  }
+              </style>
+          </head>
+          <body>
+              <div class="container">
+                  <h1>🚀 RustDesk Quick Connect</h1>
+                  <p class="subtitle">Remote Desktop Access to Your Server</p>
+                  
+                  <div class="info-box">
+                      <div class="info-label">📍 Server IP Address</div>
+                      <div class="info-value" id="ipv4"></div>
+                  </div>
+                  
+                  <div class="qr-section">
+                      <div class="qr-title">📱 Scan with RustDesk (Android)</div>
+                      <div class="qr-code">
+                          <img src="data:image/png;base64,QR_CODE_PLACEHOLDER" alt="QR Code">
+                      </div>
+                  </div>
+                  
+                  <div class="platform">
+                      <div class="platform-box">
+                          <div class="platform-icon">📱</div>
+                          <div class="platform-name">Android</div>
+                          <div class="platform-desc">Google Play Store</div>
+                      </div>
+                      <div class="platform-box">
+                          <div class="platform-icon">💻</div>
+                          <div class="platform-name">Windows</div>
+                          <div class="platform-desc">rustdesk.com</div>
+                      </div>
+                  </div>
+                  
+                  <div class="instructions">
+                      <h3>🎯 Connection Steps</h3>
+                      <ol>
+                          <li class="step">Download RustDesk for your device</li>
+                          <li class="step">Open the app</li>
+                          <li class="step">Enter server IP or scan QR code</li>
+                          <li class="step">Click Connect</li>
+                          <li class="step">Wait for connection confirmation</li>
+                      </ol>
+                  </div>
+                  
+                  <div class="warning">
+                      ⚠️ <strong>Important:</strong> Remember to delete this server when you're done to avoid unnecessary charges!
+                  </div>
+                  
+                  <div class="footer">
+                      <p>✨ Powered by RustDesk OSS + DigitalOcean</p>
+                      <p>Generated at: <span id="timestamp"></span></p>
+                  </div>
+              </div>
+              
+              <script>
+                  document.getElementById('ipv4').textContent = 'IPADDRESS_PLACEHOLDER';
+                  document.getElementById('timestamp').textContent = new Date().toLocaleString();
+              </script>
+          </body>
+          </html>
+          QR_HTML
+          
+          echo "✅ QR code and HTML guide generated"
+
+      - name: 📦 Create Release with Guides
+        id: release
+        uses: softprops/action-gh-release@v1
+        if: success()
+        with:
+          tag_name: server-${{ steps.create.outputs.droplet_id }}
+          name: 🚀 Server ${{ github.event.inputs.server_name }} (ID:${{ steps.create.outputs.droplet_id }})
+          body: |
+            # 🎉 RustDesk Server Successfully Created!
+            
+            ## 📊 Server Details
+            - **Name:** ${{ github.event.inputs.server_name }}
+            - **Droplet ID:** ${{ steps.create.outputs.droplet_id }}
+            - **IPv4:** `${{ steps.info.outputs.ipv4 }}`
+            - **IPv6:** `${{ steps.info.outputs.ipv6 }}`
+            - **Region:** ${{ steps.region.outputs.region_code }}
+            - **Size:** ${{ steps.size.outputs.size_code }}
+            - **Created:** $(date)
+            
+            ## 📥 Quick Start
+            1. Download RustDesk from [rustdesk.com](https://rustdesk.com)
+            2. Enter server IP: `${{ steps.info.outputs.ipv4 }}`
+            3. Click Connect!
+            
+            ## 📱 Downloads in This Release
+            - `rustdesk-connection-guide.md` - Complete connection guide
+            - `rustdesk-quick-connect.html` - Quick connect page
+            - `rustdesk-qr-ipv4.png` - QR code for mobile
+            
+            ## ⚠️ IMPORTANT
+            **Don't forget to delete this server when done!**
+            
+            Use the GitHub Actions "Delete DigitalOcean Server" workflow to safely remove it.
+          files: |
+            /tmp/guides/rustdesk-connection-guide.md
+            /tmp/guides/rustdesk-quick-connect.html
+            /tmp/guides/rustdesk-qr-ipv4.png
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 📋 Job Summary
+        if: success()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'SUMMARY'
+          # 🎉 Server Created Successfully!
+          
+          ## 📊 Server Information
+          
+          | Property | Value |
+          |----------|-------|
+          | **Server Name** | `${{ github.event.inputs.server_name }}` |
+          | **Droplet ID** | `${{ steps.create.outputs.droplet_id }}` |
+          | **IPv4 Address** | `${{ steps.info.outputs.ipv4 }}` |
+          | **IPv6 Address** | `${{ steps.info.outputs.ipv6 }}` |
+          | **Region** | `${{ steps.region.outputs.region_code }}` |
+          | **Size** | `${{ steps.size.outputs.size_code }}` |
+          
+          ## 🚀 Installed Components
+          - ✅ **Ubuntu 24.04 LTS**
+          - ✅ **Docker** - Container platform
+          - ✅ **RustDesk Server OSS** - Remote access
+          - ✅ **Node.js LTS** - JavaScript runtime
+          - ✅ **Python 3** - Programming language
+          - ✅ **UFW Firewall** - Security configured
+          - ✅ **Git & Dev Tools**
+          
+          ## 📱 Quick Connect
+          
+          ### Android
+          1. Install **RustDesk** from Google Play Store
+          2. Tap **"+"** to add connection
+          3. Enter: `${{ steps.info.outputs.ipv4 }}`
+          4. Tap **Connect**
+          
+          ### Windows
+          1. Download from [rustdesk.com](https://rustdesk.com)
+          2. Run installer
+          3. Enter ID/IP: `${{ steps.info.outputs.ipv4 }}`
+          4. Click **Connect**
+          
+          ## 📥 Connection Guides
+          Check the **Release** section for:
+          - 📄 `rustdesk-connection-guide.md` - Full documentation
+          - 🌐 `rustdesk-quick-connect.html` - Interactive guide
+          - 📱 `rustdesk-qr-ipv4.png` - QR code for mobile
+          
+          ## 🔧 SSH Access
           ```bash
           ssh root@${{ steps.info.outputs.ipv4 }}
           ```
           
-          ## 🎯 مراحل بعدی
+          ## ⚠️ Important Notes
+          - ⏳ RustDesk may take 1-2 minutes to fully initialize
+          - 🔥 UFW Firewall is enabled with necessary ports open
+          - 💰 **Server costs money while running!**
+          - 🗑️ **Delete server after use to avoid charges**
           
-          ### نصب KASM Workspace:
-          ```bash
-          cd /tmp
-          curl -O https://kasm-static-content.s3.amazonaws.com/kasm_release_1.15.0.06fdc8.tar.gz
-          tar -xf kasm_release_1.15.0.06fdc8.tar.gz
-          sudo bash kasm_release/install.sh
-          ```
+          ## 🗑️ When Done: Delete Server
+          1. Go to **GitHub Actions**
+          2. Run **"🗑️ Delete DigitalOcean Server"** workflow
+          3. Enter server name: `${{ github.event.inputs.server_name }}`
+          4. Select confirm: **"yes"**
+          5. Wait for deletion to complete
           
-          **پس از نصب KASM:**
-          - 🌐 آدرس: `https://${{ steps.info.outputs.ipv4 }}`
-          - 👤 Username: `admin@kasm.local`
-          - 🔑 Password: در output نصب نمایش داده می‌شود
+          ## 📞 Support
+          - Check GitHub Action logs for detailed output
+          - Review connection guide for troubleshooting
+          - Ensure ports are accessible from your network
           
-          ### نصب RustDesk Server:
-          ```bash
-          wget https://raw.githubusercontent.com/rustdesk/rustdesk-server/master/install.sh
-          chmod +x install.sh
-          ./install.sh
-          ```
-          
-          **پس از نصب RustDesk:**
-          - 🌐 سرور: `${{ steps.info.outputs.ipv4 }}`
-          - 🔑 Key: در فایل `/var/log/rustdesk-server/` موجود است
-          
-          ## ⚠️ نکات مهم
-          
-          - ⏳ نصب کامل ممکن است 5-20 دقیقه طول بکشد
-          - 🔐 احراز هویت SSH با کلید عمومی پیکربندی شده است
-          - 💰 **هزینه سرور به صورت ساعتی محاسبه می‌شود**
-          - 🗑️ **فراموش نکنید سرور را پس از استفاده حذف کنید!**
-          
-          ## 🔗 لینک‌های مفید
-          
-          - [DigitalOcean Dashboard](https://cloud.digitalocean.com/droplets)
-          - [KASM Documentation](https://kasmweb.com/docs/latest/)
-          - [RustDesk Documentation](https://rustdesk.com/docs/)
-          
-          ---
-          
-          ✨ **سرور شما آماده استفاده است!** ✨
-          
-          *ساخته شده با ❤️ توسط MahdiArts*
-          EOF
+          **Created:** $(date)
+          **Status:** ✅ **READY TO USE**
+          SUMMARY
 
-      - name: 💾 ذخیره اطلاعات سرور
-        uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: server-info-${{ steps.create.outputs.droplet_id }}
-          path: |
-            ${{ steps.info.outputs.ipv4 }}
-          retention-days: 30
+      - name: 🚨 Failure Summary
+        if: failure()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'FAIL_SUMMARY'
+          # ❌ Server Creation Failed
+          
+          ## 🔍 Troubleshooting Steps
+          
+          1. **Check API Token**
+             - Verify `DO_API_TOKEN` secret is set correctly
+             - Ensure token has full permissions
+          
+          2. **Check SSH Key**
+             - Verify SSH key name matches `SSH_KEY_NAME` secret
+             - Ensure key exists in DigitalOcean account
+          
+          3. **Review Logs**
+             - Check step logs above for specific error
+             - API errors usually have helpful messages
+          
+          4. **Check Region/Size**
+             - Verify selected region is available
+             - Ensure selected size is available in that region
+          
+          5. **Account Status**
+             - Check DigitalOcean account status
+             - Verify account has sufficient credit
+          
+          ## 📝 Common Issues
+          
+          - **"SSH Key not found"** → Check secret name matches exactly
+          - **"Invalid API Token"** → Regenerate token in DigitalOcean
+          - **"Timeout"** → Server may have created but taking time to boot
+          - **"Forbidden"** → Check API token permissions
+          
+          Please review the logs above for the specific error message.
+          FAIL_SUMMARY
