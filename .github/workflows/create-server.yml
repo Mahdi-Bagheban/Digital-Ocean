@@ -1,10 +1,11 @@
 # ╔════════════════════════════════════════════════════════════════════════════╗
-# ║ 🚀 DigitalOcean Server + RustDesk Server OSS Automation Workflow v10.0     ║
+# ║ 🚀 DigitalOcean Server + RustDesk Server OSS Automation Workflow v11.0     ║
 # ║                                                                            ║
 # ║ 📝 Purpose: Complete server setup with RustDesk remote access             ║
 # ║ 🎉 Features: Docker + RustDesk + Node.js + Python + Auto-Guide Generation ║
 # ║ 👤 Author: Mahdi Bagheban                                                  ║
-# ║ 📅 Updated: December 2025                                                 ║
+# ║ 📅 Updated: December 2025 (v11.0 - CRITICAL FIXES)                       ║
+# ║ 🔧 Fixes: SSH handling, RustDesk timing, release tags                    ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
 name: 🚀 Create DigitalOcean Server with RustDesk
@@ -353,8 +354,10 @@ jobs:
           chmod +x /tmp/init-server.sh
           
           echo "🚀 Running initialization script on server..."
-          ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-              -i ~/.ssh/id_rsa root@${{ steps.info.outputs.ipv4 }} \
+          ssh -o StrictHostKeyChecking=no \
+              -o UserKnownHostsFile=/dev/null \
+              -o ConnectTimeout=10 \
+              root@${{ steps.info.outputs.ipv4 }} \
               'bash -s' < /tmp/init-server.sh
           
           echo "✅ Server initialization completed!"
@@ -362,22 +365,35 @@ jobs:
       - name: 🔐 Generate RustDesk Connection Key
         id: rustdesk_key
         run: |
-          echo "🔑 Extracting RustDesk key from server..."
+          echo "🔑 Extracting RustDesk key with retry logic..."
           
-          # Get the key from server
-          key=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                -i ~/.ssh/id_rsa root@${{ steps.info.outputs.ipv4 }} \
-                'cat /opt/rustdesk/id_ed25519.pub' 2>/dev/null || echo "")
+          ip="${{ steps.info.outputs.ipv4 }}"
+          key=""
           
+          # Retry logic (1-15 attempts)
+          for attempt in {1..15}; do
+            key=$(ssh -o StrictHostKeyChecking=no \
+                      -o UserKnownHostsFile=/dev/null \
+                      -o ConnectTimeout=5 \
+                      root@$ip \
+                      'cat /opt/rustdesk/id_ed25519.pub' 2>/dev/null || true)
+            
+            if [ -n "$key" ] && [ "$key" != "" ]; then
+              echo "✅ Key extracted on attempt $attempt!"
+              break
+            fi
+            
+            echo "[$attempt/15] Waiting for key..."
+            sleep 2
+          done
+          
+          # Fallback if key not available
           if [ -z "$key" ]; then
-            # Try to get key from server files
-            key=$(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-                  -i ~/.ssh/id_rsa root@${{ steps.info.outputs.ipv4 }} \
-                  'ls -la /opt/rustdesk/' 2>/dev/null | grep -oE '[A-Za-z0-9+/]+={0,2}' | head -1 || echo "KEY_WILL_BE_GENERATED")
+            key="KEY_WILL_BE_GENERATED_ON_FIRST_CONNECTION"
           fi
           
           echo "rustdesk_key=$key" >> $GITHUB_OUTPUT
-          echo "✅ Key: ${key:0:20}..."
+          echo "✅ Key extraction complete"
 
       - name: 📄 Generate RustDesk Connection Guide
         id: guide
@@ -542,224 +558,15 @@ jobs:
           # Create QR code for Android quick scan
           qrencode -o /tmp/guides/rustdesk-qr-ipv4.png "$ipv4" -s 10 -m 2
           
-          # Create HTML file with embedded QR codes
-          cat > /tmp/guides/rustdesk-quick-connect.html << 'QR_HTML'
-          <!DOCTYPE html>
-          <html lang="en">
-          <head>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <title>RustDesk Quick Connect</title>
-              <style>
-                  * { margin: 0; padding: 0; box-sizing: border-box; }
-                  body {
-                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-                      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-                      min-height: 100vh;
-                      display: flex;
-                      align-items: center;
-                      justify-content: center;
-                      padding: 20px;
-                  }
-                  .container {
-                      background: white;
-                      border-radius: 20px;
-                      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-                      padding: 40px;
-                      max-width: 600px;
-                      width: 100%;
-                  }
-                  h1 {
-                      color: #333;
-                      text-align: center;
-                      margin-bottom: 10px;
-                      font-size: 28px;
-                  }
-                  .subtitle {
-                      text-align: center;
-                      color: #666;
-                      margin-bottom: 30px;
-                      font-size: 14px;
-                  }
-                  .info-box {
-                      background: #f5f5f5;
-                      padding: 20px;
-                      border-radius: 10px;
-                      margin-bottom: 30px;
-                      border-left: 4px solid #667eea;
-                  }
-                  .info-label {
-                      color: #666;
-                      font-size: 12px;
-                      font-weight: 600;
-                      text-transform: uppercase;
-                      margin-bottom: 5px;
-                  }
-                  .info-value {
-                      color: #333;
-                      font-size: 18px;
-                      font-weight: 500;
-                      font-family: 'Courier New', monospace;
-                      word-break: break-all;
-                  }
-                  .qr-section {
-                      text-align: center;
-                      margin: 40px 0;
-                  }
-                  .qr-title {
-                      color: #666;
-                      font-size: 14px;
-                      font-weight: 600;
-                      margin-bottom: 15px;
-                      text-transform: uppercase;
-                  }
-                  .qr-code {
-                      background: white;
-                      padding: 20px;
-                      border-radius: 10px;
-                      display: inline-block;
-                      border: 2px solid #f0f0f0;
-                  }
-                  .qr-code img {
-                      width: 200px;
-                      height: 200px;
-                      image-rendering: pixelated;
-                  }
-                  .instructions {
-                      background: #f0f7ff;
-                      padding: 20px;
-                      border-radius: 10px;
-                      margin-top: 30px;
-                      border-left: 4px solid #667eea;
-                  }
-                  .instructions h3 {
-                      color: #333;
-                      margin-bottom: 10px;
-                      font-size: 14px;
-                  }
-                  .instructions ol {
-                      color: #666;
-                      padding-left: 20px;
-                      font-size: 13px;
-                      line-height: 1.8;
-                  }
-                  .step {
-                      margin-bottom: 8px;
-                  }
-                  .platform {
-                      margin-top: 30px;
-                      display: grid;
-                      grid-template-columns: 1fr 1fr;
-                      gap: 15px;
-                  }
-                  .platform-box {
-                      background: #f9f9f9;
-                      padding: 15px;
-                      border-radius: 10px;
-                      text-align: center;
-                      border: 2px solid #e0e0e0;
-                  }
-                  .platform-icon {
-                      font-size: 32px;
-                      margin-bottom: 10px;
-                  }
-                  .platform-name {
-                      color: #333;
-                      font-weight: 600;
-                      font-size: 14px;
-                  }
-                  .platform-desc {
-                      color: #999;
-                      font-size: 12px;
-                      margin-top: 5px;
-                  }
-                  .footer {
-                      text-align: center;
-                      color: #999;
-                      font-size: 12px;
-                      margin-top: 30px;
-                      padding-top: 20px;
-                      border-top: 1px solid #e0e0e0;
-                  }
-                  .warning {
-                      background: #fff3cd;
-                      border-left: 4px solid #ffc107;
-                      padding: 15px;
-                      border-radius: 5px;
-                      color: #856404;
-                      margin: 20px 0;
-                      font-size: 13px;
-                  }
-              </style>
-          </head>
-          <body>
-              <div class="container">
-                  <h1>🚀 RustDesk Quick Connect</h1>
-                  <p class="subtitle">Remote Desktop Access to Your Server</p>
-                  
-                  <div class="info-box">
-                      <div class="info-label">📍 Server IP Address</div>
-                      <div class="info-value" id="ipv4"></div>
-                  </div>
-                  
-                  <div class="qr-section">
-                      <div class="qr-title">📱 Scan with RustDesk (Android)</div>
-                      <div class="qr-code">
-                          <img src="data:image/png;base64,QR_CODE_PLACEHOLDER" alt="QR Code">
-                      </div>
-                  </div>
-                  
-                  <div class="platform">
-                      <div class="platform-box">
-                          <div class="platform-icon">📱</div>
-                          <div class="platform-name">Android</div>
-                          <div class="platform-desc">Google Play Store</div>
-                      </div>
-                      <div class="platform-box">
-                          <div class="platform-icon">💻</div>
-                          <div class="platform-name">Windows</div>
-                          <div class="platform-desc">rustdesk.com</div>
-                      </div>
-                  </div>
-                  
-                  <div class="instructions">
-                      <h3>🎯 Connection Steps</h3>
-                      <ol>
-                          <li class="step">Download RustDesk for your device</li>
-                          <li class="step">Open the app</li>
-                          <li class="step">Enter server IP or scan QR code</li>
-                          <li class="step">Click Connect</li>
-                          <li class="step">Wait for connection confirmation</li>
-                      </ol>
-                  </div>
-                  
-                  <div class="warning">
-                      ⚠️ <strong>Important:</strong> Remember to delete this server when you're done to avoid unnecessary charges!
-                  </div>
-                  
-                  <div class="footer">
-                      <p>✨ Powered by RustDesk OSS + DigitalOcean</p>
-                      <p>Generated at: <span id="timestamp"></span></p>
-                  </div>
-              </div>
-              
-              <script>
-                  document.getElementById('ipv4').textContent = 'IPADDRESS_PLACEHOLDER';
-                  document.getElementById('timestamp').textContent = new Date().toLocaleString();
-              </script>
-          </body>
-          </html>
-          QR_HTML
-          
-          echo "✅ QR code and HTML guide generated"
+          echo "✅ QR code generated: /tmp/guides/rustdesk-qr-ipv4.png"
 
       - name: 📦 Create Release with Guides
         id: release
         uses: softprops/action-gh-release@v1
         if: success()
         with:
-          tag_name: server-${{ steps.create.outputs.droplet_id }}
-          name: 🚀 Server ${{ github.event.inputs.server_name }} (ID:${{ steps.create.outputs.droplet_id }})
+          tag_name: v1.0-server-${{ steps.create.outputs.droplet_id }}-${{ github.run_id }}
+          name: 🚀 Server "${{ github.event.inputs.server_name }}" (ID: ${{ steps.create.outputs.droplet_id }})
           body: |
             # 🎉 RustDesk Server Successfully Created!
             
@@ -779,7 +586,6 @@ jobs:
             
             ## 📱 Downloads in This Release
             - `rustdesk-connection-guide.md` - Complete connection guide
-            - `rustdesk-quick-connect.html` - Quick connect page
             - `rustdesk-qr-ipv4.png` - QR code for mobile
             
             ## ⚠️ IMPORTANT
@@ -788,7 +594,6 @@ jobs:
             Use the GitHub Actions "Delete DigitalOcean Server" workflow to safely remove it.
           files: |
             /tmp/guides/rustdesk-connection-guide.md
-            /tmp/guides/rustdesk-quick-connect.html
             /tmp/guides/rustdesk-qr-ipv4.png
           draft: false
           prerelease: false
@@ -838,7 +643,6 @@ jobs:
           ## 📥 Connection Guides
           Check the **Release** section for:
           - 📄 `rustdesk-connection-guide.md` - Full documentation
-          - 🌐 `rustdesk-quick-connect.html` - Interactive guide
           - 📱 `rustdesk-qr-ipv4.png` - QR code for mobile
           
           ## 🔧 SSH Access
@@ -856,16 +660,10 @@ jobs:
           1. Go to **GitHub Actions**
           2. Run **"🗑️ Delete DigitalOcean Server"** workflow
           3. Enter server name: `${{ github.event.inputs.server_name }}`
-          4. Select confirm: **"yes"**
-          5. Wait for deletion to complete
-          
-          ## 📞 Support
-          - Check GitHub Action logs for detailed output
-          - Review connection guide for troubleshooting
-          - Ensure ports are accessible from your network
+          4. Confirm deletion
           
           **Created:** $(date)
-          **Status:** ✅ **READY TO USE**
+          **Status:** ✅ **READY TO USE (v11.0 FIXED)**
           SUMMARY
 
       - name: 🚨 Failure Summary
