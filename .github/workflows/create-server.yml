@@ -34,7 +34,7 @@ on:
       size_slug:
         description: '💪 Server Plan | پلن سرور'
         required: true
-        default: 's-2vcpu-4gb-intel'
+        default: 's-1vcpu-512mb-10gb'
         type: choice
         options:
           - 's-1vcpu-512mb-10gb - 🌱 Nano ($4/mo) - فقط برای تست'
