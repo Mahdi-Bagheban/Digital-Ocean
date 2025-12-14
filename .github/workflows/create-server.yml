@@ -1,11 +1,11 @@
 # ╔════════════════════════════════════════════════════════════════════════════╗
-# ║ 🚀 DigitalOcean Server + RustDesk Server OSS Automation Workflow v11.0     ║
+# ║ 🚀 DigitalOcean Server + RustDesk Server OSS Automation Workflow v12.0     ║
 # ║                                                                            ║
 # ║ 📝 Purpose: Complete server setup with RustDesk remote access             ║
 # ║ 🎉 Features: Docker + RustDesk + Node.js + Python + Auto-Guide Generation ║
 # ║ 👤 Author: Mahdi Bagheban                                                  ║
-# ║ 📅 Updated: December 2025 (v11.0 - CRITICAL FIXES)                       ║
-# ║ 🔧 Fixes: SSH handling, RustDesk timing, release tags                    ║
+# ║ 📅 Updated: December 2025 (v12.0 - SSH KEY IMPROVEMENTS)                 ║
+# ║ 🔧 Improvements: SSH private key usage, security, speed                   ║
 # ╚════════════════════════════════════════════════════════════════════════════╝
 
 name: 🚀 Create DigitalOcean Server with RustDesk
@@ -64,28 +64,6 @@ jobs:
           sudo apt-get install -y jq curl bc qrencode 2>&1 | grep -E "(Setting|^Get:|^Reading)" || true
           echo "✅ Tools installed: jq, curl, bc, qrencode"
 
-      - name: 🔑 Get SSH Key ID
-        id: ssh_key
-        run: |
-          echo "🔍 Searching for SSH Key: ${{ secrets.SSH_KEY_NAME }}"
-          
-          response=$(curl -s -X GET \
-            -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
-            -H "Content-Type: application/json" \
-            "https://api.digitalocean.com/v2/account/keys")
-          
-          ssh_key_id=$(echo "$response" | jq -r ".ssh_keys[] | select(.name==\"${{ secrets.SSH_KEY_NAME }}\") | .id" | head -1)
-          
-          if [ -z "$ssh_key_id" ] || [ "$ssh_key_id" = "null" ]; then
-            echo "❌ SSH Key not found: ${{ secrets.SSH_KEY_NAME }}"
-            echo "Available SSH Keys:"
-            echo "$response" | jq -r '.ssh_keys[] | "  • \(.name) (ID: \(.id))"'
-            exit 1
-          fi
-          
-          echo "ssh_key_id=$ssh_key_id" >> $GITHUB_OUTPUT
-          echo "✅ SSH Key found: $ssh_key_id"
-
       - name: 📍 Extract Region Code
         id: region
         run: |
@@ -115,7 +93,7 @@ jobs:
               "region": "${{ steps.region.outputs.region_code }}",
               "size": "${{ steps.size.outputs.size_code }}",
               "image": "ubuntu-24-04-x64",
-              "ssh_keys": [${{ steps.ssh_key.outputs.ssh_key_id }}],
+              "ssh_keys": ["MahdiArts"],
               "backups": false,
               "ipv6": true,
               "monitoring": true,
@@ -177,18 +155,29 @@ jobs:
           echo "✅ IPv4: $ipv4"
           echo "✅ IPv6: $ipv6"
 
+      - name: 🔐 Setup SSH Private Key
+        run: |
+          echo "🔐 Setting up SSH private key..."
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo "✅ SSH private key configured"
+          echo "✅ Key fingerprint:"
+          ssh-keygen -lf ~/.ssh/id_rsa
+
       - name: 🏥 Health Check - Wait for SSH
         run: |
           ip="${{ steps.info.outputs.ipv4 }}"
           echo "🏥 Checking SSH availability on $ip..."
           
-          for i in {1..30}; do
+          for i in {1..60}; do
             if timeout 3 bash -c "echo > /dev/tcp/$ip/22" 2>/dev/null; then
               echo "✅ SSH is ready!"
               exit 0
             fi
-            echo "[$i/30] SSH not ready - waiting..."
-            sleep 4
+            echo "[$i/60] SSH not ready - waiting..."
+            sleep 2
           done
           
           echo "⚠️ SSH check timeout (server may still be initializing)"
@@ -354,9 +343,10 @@ jobs:
           chmod +x /tmp/init-server.sh
           
           echo "🚀 Running initialization script on server..."
-          ssh -o StrictHostKeyChecking=no \
+          ssh -o StrictHostKeyChecking=accept-new \
               -o UserKnownHostsFile=/dev/null \
               -o ConnectTimeout=10 \
+              -i ~/.ssh/id_rsa \
               root@${{ steps.info.outputs.ipv4 }} \
               'bash -s' < /tmp/init-server.sh
           
@@ -372,9 +362,10 @@ jobs:
           
           # Retry logic (1-15 attempts)
           for attempt in {1..15}; do
-            key=$(ssh -o StrictHostKeyChecking=no \
+            key=$(ssh -o StrictHostKeyChecking=accept-new \
                       -o UserKnownHostsFile=/dev/null \
                       -o ConnectTimeout=5 \
+                      -i ~/.ssh/id_rsa \
                       root@$ip \
                       'cat /opt/rustdesk/id_ed25519.pub' 2>/dev/null || true)
             
@@ -663,7 +654,7 @@ jobs:
           4. Confirm deletion
           
           **Created:** $(date)
-          **Status:** ✅ **READY TO USE (v11.0 FIXED)**
+          **Status:** ✅ **READY TO USE (v12.0 SSH KEY IMPROVEMENTS)**
           SUMMARY
 
       - name: 🚨 Failure Summary
@@ -674,32 +665,38 @@ jobs:
           
           ## 🔍 Troubleshooting Steps
           
-          1. **Check API Token**
+          1. **Check SSH Private Key Secret**
+             - Verify `SSH_PRIVATE_KEY` secret is set correctly
+             - Ensure it contains full private key (-----BEGIN...-----END-----)
+             - Check for extra whitespace or line breaks
+          
+          2. **Check API Token**
              - Verify `DO_API_TOKEN` secret is set correctly
              - Ensure token has full permissions
           
-          2. **Check SSH Key**
-             - Verify SSH key name matches `SSH_KEY_NAME` secret
-             - Ensure key exists in DigitalOcean account
+          3. **Check Public Key in DigitalOcean**
+             - Verify public key named "MahdiArts" exists
+             - Ensure key is in correct account
           
-          3. **Review Logs**
+          4. **Review Logs**
              - Check step logs above for specific error
              - API errors usually have helpful messages
           
-          4. **Check Region/Size**
+          5. **Check Region/Size**
              - Verify selected region is available
              - Ensure selected size is available in that region
           
-          5. **Account Status**
+          6. **Account Status**
              - Check DigitalOcean account status
              - Verify account has sufficient credit
           
           ## 📝 Common Issues
           
-          - **"SSH Key not found"** → Check secret name matches exactly
+          - **"SSH key permission denied"** → Check private key format and permissions
           - **"Invalid API Token"** → Regenerate token in DigitalOcean
           - **"Timeout"** → Server may have created but taking time to boot
           - **"Forbidden"** → Check API token permissions
+          - **"Public key not found"** → Verify "MahdiArts" key exists in DigitalOcean
           
           Please review the logs above for the specific error message.
           FAIL_SUMMARY
