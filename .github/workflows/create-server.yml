@@ -1,120 +1,136 @@
-name: 🚀 Create DigitalOcean Server with RustDesk
+name: Create DigitalOcean Server with RustDesk
 
 on:
   workflow_dispatch:
     inputs:
       server_name:
-        description: '📝 Server Name | نام سرور'
+        description: 'Server Name (e.g., my-rustdesk-server)'
         required: true
         default: 'rustdesk-server'
         type: string
 
       region:
-        description: '🌍 Region | منطقه'
+        description: 'Region (Frankfurt best for Iran)'
         required: true
-        default: 'fra1 - 🇩🇪 Frankfurt (بهترین برای ایران)'
+        default: 'fra1'
         type: choice
         options:
-          - 'fra1 - 🇩🇪 Frankfurt (بهترین برای ایران) ⭐'
-          - 'ams3 - 🇳🇱 Amsterdam (هلند)'
-          - 'lon1 - 🇬🇧 London (انگلیس)'
-          - 'nyc1 - 🇺🇸 New York (آمریکا)'
-          - 'sfo3 - 🇺🇸 San Francisco (کالیفرنیا)'
-          - 'sgp1 - 🇸🇬 Singapore (آسیا)'
+          - 'fra1'
+          - 'ams3'
+          - 'lon1'
+          - 'nyc1'
+          - 'sfo3'
+          - 'sgp1'
 
       size_slug:
-        description: '💪 Server Plan | پلن سرور'
+        description: 'Server Plan (Small recommended)'
         required: true
-        default: 's-2vcpu-4gb-intel - 🌱 Small ($26/mo) - توصیه شده'
+        default: 's-2vcpu-4gb-intel'
         type: choice
         options:
-          - 's-1vcpu-512mb-10gb - 🟢 Nano ($4/mo) - فقط برای تست'
-          - 's-2vcpu-4gb-intel - 🌱 Small ($26/mo) - توصیه شده ⭐'
-          - 's-4vcpu-8gb-intel - 🔥 Standard ($52/mo)'
-          - 'm-2vcpu-16gb - 👑 High Memory ($98/mo)'
-          - 'm-8vcpu-64gb-intel - 🚀 Enterprise ($435/mo)'
+          - 's-1vcpu-512mb-10gb'
+          - 's-2vcpu-4gb-intel'
+          - 's-4vcpu-8gb-intel'
+          - 'm-2vcpu-16gb'
+          - 'm-8vcpu-64gb-intel'
 
 jobs:
   create-server:
-    name: 🏗️ Create & Setup Server
+    name: Create and Configure Server
     runs-on: ubuntu-latest
     timeout-minutes: 45
 
     outputs:
-      droplet_id: ${{ steps.create.outputs.droplet_id }}
-      server_ip: ${{ steps.info.outputs.ipv4 }}
-      server_ipv6: ${{ steps.info.outputs.ipv6 }}
+      droplet_id: ${{ steps.create_droplet.outputs.droplet_id }}
+      server_ip: ${{ steps.get_network.outputs.ipv4 }}
+      server_ipv6: ${{ steps.get_network.outputs.ipv6 }}
       server_name: ${{ github.event.inputs.server_name }}
 
     steps:
-      - name: 📥 Checkout Code
+      # ========================================
+      # PHASE 1: PREPARATION
+      # ========================================
+
+      - name: Checkout Repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 1
 
-      - name: 🔧 Install Dependencies
+      - name: Install System Tools
         run: |
-          echo "📦 Installing required tools..."
+          echo "Installing required tools..."
           sudo apt-get update -qq
-          sudo apt-get install -y jq curl bc qrencode 2>&1 | tail -2
-          echo "✅ Tools installed successfully"
-
-      - name: 📋 Parse Configuration
-        id: parse
-        run: |
-          region_input="${{ github.event.inputs.region }}"
-          region_code=$(echo "$region_input" | cut -d' ' -f1)
-          
-          size_input="${{ github.event.inputs.size_slug }}"
-          size_code=$(echo "$size_input" | cut -d' ' -f1)
-          
-          echo "region_code=$region_code" >> $GITHUB_OUTPUT
-          echo "size_code=$size_code" >> $GITHUB_OUTPUT
-          
-          echo "📍 Configuration parsed:"
-          echo "   Region: $region_code"
-          echo "   Plan: $size_code"
-          echo "   Server: ${{ github.event.inputs.server_name }}"
-
-      - name: 🏗️ Create Droplet
-        id: create
-        run: |
-          echo "🏗️ Creating Ubuntu 24.04 LTS Droplet..."
-          echo "   Region: ${{ steps.parse.outputs.region_code }}"
-          echo "   Plan: ${{ steps.parse.outputs.size_code }}"
+          sudo apt-get install -y jq curl qrencode bc 2>&1 | tail -2
           echo ""
+          echo "Tools installed:"
+          echo "  - jq (JSON parser)"
+          echo "  - curl (HTTP client)"
+          echo "  - qrencode (QR generator)"
+          echo "  - bc (calculator)"
+
+      - name: Display Configuration
+        run: |
+          echo "==========================================="
+          echo "SERVER CONFIGURATION"
+          echo "==========================================="
+          echo ""
+          echo "Server Name: ${{ github.event.inputs.server_name }}"
+          echo "Region: ${{ github.event.inputs.region }}"
+          echo "Plan: ${{ github.event.inputs.size_slug }}"
+          echo "OS: Ubuntu 24.04 LTS"
+          echo ""
+          echo "Will install:"
+          echo "  - Docker (container platform)"
+          echo "  - Node.js v20 LTS"
+          echo "  - Python 3"
+          echo "  - RustDesk Server OSS v1.41.9"
+          echo "  - UFW Firewall"
+          echo "  - Development tools"
+          echo ""
+          echo "==========================================="
+
+      # ========================================
+      # PHASE 2: CREATE DROPLET
+      # ========================================
+
+      - name: Create Droplet
+        id: create_droplet
+        run: |
+          echo "Creating droplet on DigitalOcean..."
           
           response=$(curl -s -X POST \
             -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
             -H "Content-Type: application/json" \
             -d '{
               "name": "${{ github.event.inputs.server_name }}",
-              "region": "${{ steps.parse.outputs.region_code }}",
-              "size": "${{ steps.parse.outputs.size_code }}",
+              "region": "${{ github.event.inputs.region }}",
+              "size": "${{ github.event.inputs.size_slug }}",
               "image": "ubuntu-24-04-x64",
               "ssh_keys": ["MahdiArts"],
               "backups": false,
               "ipv6": true,
               "monitoring": true,
-              "tags": ["github-actions", "rustdesk", "automated"]
+              "tags": ["github-actions", "rustdesk", "v14"]
             }' \
             "https://api.digitalocean.com/v2/droplets")
           
           droplet_id=$(echo "$response" | jq -r '.droplet.id // empty')
           
           if [ -z "$droplet_id" ]; then
-            echo "❌ Failed to create droplet"
+            echo "ERROR: Failed to create droplet"
+            echo "Response:"
             echo "$response" | jq '.' 2>/dev/null || echo "$response"
             exit 1
           fi
           
           echo "droplet_id=$droplet_id" >> $GITHUB_OUTPUT
-          echo "✅ Droplet created: ID $droplet_id"
+          echo ""
+          echo "SUCCESS: Droplet created"
+          echo "  ID: $droplet_id"
+          echo "  Name: ${{ github.event.inputs.server_name }}"
 
-      - name: ⏳ Wait for Activation
+      - name: Wait for Activation
         run: |
-          droplet_id="${{ steps.create.outputs.droplet_id }}"
-          echo "⏳ Waiting for droplet to become active..."
+          droplet_id="${{ steps.create_droplet.outputs.droplet_id }}"
+          echo "Waiting for droplet activation (max 120s)..."
           
           for i in {1..60}; do
             response=$(curl -s -X GET \
@@ -124,48 +140,55 @@ jobs:
             status=$(echo "$response" | jq -r '.droplet.status // "unknown"')
             
             if [ "$status" = "active" ]; then
-              echo "✅ Droplet is ACTIVE ($((i*2))s)"
+              echo ""
+              echo "SUCCESS: Droplet active (${i}x2 = $((i*2)) seconds)"
               exit 0
             fi
             
-            if [ $((i % 15)) -eq 0 ]; then
-              echo "   Status: $status [${i}/60]"
+            if [ $((i % 10)) -eq 0 ]; then
+              echo "  [$((i*2))s] Status: $status"
             fi
             
             sleep 2
           done
           
-          echo "❌ Timeout waiting for activation"
+          echo ""
+          echo "ERROR: Timeout after 120 seconds"
           exit 1
 
-      - name: 📊 Get Network Info
-        id: info
+      # ========================================
+      # PHASE 3: NETWORK CONFIGURATION
+      # ========================================
+
+      - name: Get Network Information
+        id: get_network
         run: |
-          droplet_id="${{ steps.create.outputs.droplet_id }}"
-          echo "📊 Retrieving network information..."
+          droplet_id="${{ steps.create_droplet.outputs.droplet_id }}"
+          echo "Retrieving network information..."
           
           response=$(curl -s -X GET \
             -H "Authorization: Bearer ${{ secrets.DO_API_TOKEN }}" \
             "https://api.digitalocean.com/v2/droplets/$droplet_id")
           
           ipv4=$(echo "$response" | jq -r '.droplet.networks.v4[] | select(.type=="public") | .ip_address' | head -1)
-          ipv6=$(echo "$response" | jq -r '.droplet.networks.v6[0].ip_address // "N/A"')
+          ipv6=$(echo "$response" | jq -r '.droplet.networks.v6[0].ip_address // "Not Available"')
           
           if [ -z "$ipv4" ]; then
-            echo "❌ Failed to get IPv4 address"
+            echo "ERROR: Could not retrieve IPv4"
             exit 1
           fi
           
           echo "ipv4=$ipv4" >> $GITHUB_OUTPUT
           echo "ipv6=$ipv6" >> $GITHUB_OUTPUT
           
-          echo "✅ Network info retrieved:"
-          echo "   IPv4: $ipv4"
-          echo "   IPv6: $ipv6"
+          echo ""
+          echo "Network info:"
+          echo "  IPv4: $ipv4"
+          echo "  IPv6: $ipv6"
 
-      - name: 🔐 Setup SSH
+      - name: Configure SSH
         run: |
-          echo "🔐 Configuring SSH..."
+          echo "Configuring SSH access..."
           
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
@@ -173,85 +196,110 @@ jobs:
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           
-          if grep -q "BEGIN OPENSSH PRIVATE KEY" ~/.ssh/id_rsa; then
-            echo "✅ SSH key configured (ED25519)"
+          if grep -q "BEGIN" ~/.ssh/id_rsa; then
+            echo ""
+            echo "SUCCESS: SSH key configured"
           else
-            echo "❌ Invalid SSH key format"
+            echo ""
+            echo "ERROR: Invalid SSH key"
             exit 1
           fi
 
-      - name: 🏥 Test SSH Access
+      - name: Wait for SSH
         run: |
-          ip="${{ steps.info.outputs.ipv4 }}"
-          echo "🏥 Checking SSH availability..."
+          ip="${{ steps.get_network.outputs.ipv4 }}"
+          echo "Waiting for SSH service (max 120s)..."
           
           for i in {1..60}; do
             if timeout 3 bash -c "echo > /dev/tcp/$ip/22" 2>/dev/null; then
-              echo "✅ SSH is ready"
-              sleep 1
+              echo ""
+              echo "SUCCESS: SSH ready"
+              sleep 2
               exit 0
             fi
             
-            if [ $((i % 15)) -eq 0 ]; then
-              echo "   Waiting... [${i}/60]"
+            if [ $((i % 10)) -eq 0 ]; then
+              echo "  [$((i*2))s] Waiting..."
             fi
             
             sleep 2
           done
           
-          echo "⚠️ SSH timeout - continuing anyway"
+          echo ""
+          echo "WARNING: SSH check timeout (continuing anyway)"
 
-      - name: 🔧 Execute Setup
+      - name: Test SSH Connection
         run: |
-          cat > /tmp/init.sh << 'INIT'
+          ip="${{ steps.get_network.outputs.ipv4 }}"
+          echo "Testing SSH connection..."
+          
+          if ssh -o StrictHostKeyChecking=accept-new \
+                 -o UserKnownHostsFile=/dev/null \
+                 -o ConnectTimeout=10 \
+                 -o LogLevel=ERROR \
+                 -i ~/.ssh/id_rsa \
+                 root@$ip \
+                 'echo "Connection successful" && uname -a'; then
+            echo ""
+            echo "SUCCESS: SSH working"
+          else
+            echo ""
+            echo "ERROR: SSH failed"
+            exit 1
+          fi
+
+      # ========================================
+      # PHASE 4: SERVER INITIALIZATION
+      # ========================================
+
+      - name: Initialize Server
+        run: |
+          cat > /tmp/init.sh << 'SETUP_SCRIPT'
           #!/bin/bash
           set -e
           
-          echo "═══════════════════════════════════════════"
-          echo "🚀 SERVER INITIALIZATION"
-          echo "═══════════════════════════════════════════"
+          echo "==========================================="
+          echo "SERVER INITIALIZATION v14.0"
+          echo "==========================================="
           echo ""
           
-          # System update
-          echo "📦 [1/8] Updating system..."
+          # Update system
+          echo "[1/8] Updating system..."
+          export DEBIAN_FRONTEND=noninteractive
           sudo apt-get update -qq
           sudo apt-get upgrade -y -qq
           sudo apt-get install -y curl wget git build-essential 2>&1 | tail -1
-          echo "✅ System updated"
-          echo ""
+          echo "      Done"
           
           # Docker
-          echo "🐳 [2/8] Installing Docker..."
+          echo "[2/8] Installing Docker..."
           curl -fsSL https://get.docker.com -o /tmp/docker.sh
           sudo sh /tmp/docker.sh > /dev/null 2>&1
           sudo usermod -aG docker root
           sudo systemctl start docker
           sudo systemctl enable docker
-          echo "✅ Docker installed"
-          echo ""
+          echo "      Done: $(docker --version | cut -d' ' -f3 | tr -d ',')"
           
           # Node.js
-          echo "📦 [3/8] Installing Node.js..."
+          echo "[3/8] Installing Node.js..."
           curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash - > /dev/null 2>&1
-          sudo apt-get install -y nodejs 2>&1 | tail -1
-          echo "✅ Node.js $(node -v) installed"
-          echo ""
+          sudo apt-get install -y nodejs
+          echo "      Done: $(node -v)"
           
           # Python
-          echo "🐍 [4/8] Installing Python..."
-          sudo apt-get install -y python3 python3-pip python3-dev python3-venv 2>&1 | tail -1
-          echo "✅ Python 3 installed"
-          echo ""
+          echo "[4/8] Installing Python..."
+          sudo apt-get install -y python3 python3-pip python3-dev python3-venv
+          echo "      Done: $(python3 --version | cut -d' ' -f2)"
           
           # Dev tools
-          echo "🛠️ [5/8] Installing dev tools..."
-          sudo apt-get install -y git nano vim curl wget jq htop 2>&1 | tail -1
-          echo "✅ Dev tools installed"
-          echo ""
+          echo "[5/8] Installing dev tools..."
+          sudo apt-get install -y git nano vim htop jq
+          echo "      Done"
           
           # Firewall
-          echo "🔥 [6/8] Setting up firewall..."
-          sudo apt-get install -y ufw 2>&1 | tail -1
+          echo "[6/8] Configuring firewall..."
+          sudo apt-get install -y ufw
+          sudo ufw --force reset > /dev/null
           sudo ufw default deny incoming
           sudo ufw default allow outgoing
           sudo ufw allow 22/tcp
@@ -259,26 +307,23 @@ jobs:
           sudo ufw allow 443/tcp
           sudo ufw allow 5900:5901/tcp
           sudo ufw allow 21115:21119/tcp
-          sudo ufw enable > /dev/null 2>&1
-          echo "✅ Firewall configured"
-          echo ""
+          sudo ufw --force enable
+          echo "      Done: 5 rules configured"
           
           # RustDesk
-          echo "🦀 [7/8] Installing RustDesk..."
+          echo "[7/8] Installing RustDesk..."
           sudo mkdir -p /opt/rustdesk
           cd /opt/rustdesk
-          RUSTDESK_VERSION="1.41.9"
-          wget -q "https://github.com/rustdesk/rustdesk-server/releases/download/$RUSTDESK_VERSION/rustdesk-server-linux-x64.zip"
+          wget -q https://github.com/rustdesk/rustdesk-server/releases/download/1.41.9/rustdesk-server-linux-x64.zip
           unzip -q rustdesk-server-linux-x64.zip
           rm rustdesk-server-linux-x64.zip
           sudo chmod +x hbbr hbbs
-          echo "✅ RustDesk $RUSTDESK_VERSION installed"
-          echo ""
+          echo "      Done: v1.41.9"
           
           # Services
-          echo "⚙️ [8/8] Starting services..."
+          echo "[8/8] Starting services..."
           
-          sudo tee /etc/systemd/system/rustdesk-hbbs.service > /dev/null << 'SRVHBBS'
+          sudo tee /etc/systemd/system/rustdesk-hbbs.service > /dev/null << 'SRV1'
           [Unit]
           Description=RustDesk Signal Server
           After=network.target
@@ -288,16 +333,14 @@ jobs:
           User=root
           WorkingDirectory=/opt/rustdesk
           ExecStart=/opt/rustdesk/hbbs
-          Restart=on-failure
+          Restart=always
           RestartSec=5
-          StandardOutput=journal
-          StandardError=journal
           
           [Install]
           WantedBy=multi-user.target
-          SRVHBBS
+          SRV1
           
-          sudo tee /etc/systemd/system/rustdesk-hbbr.service > /dev/null << 'SRVHBBR'
+          sudo tee /etc/systemd/system/rustdesk-hbbr.service > /dev/null << 'SRV2'
           [Unit]
           Description=RustDesk Relay Server
           After=network.target rustdesk-hbbs.service
@@ -307,203 +350,242 @@ jobs:
           User=root
           WorkingDirectory=/opt/rustdesk
           ExecStart=/opt/rustdesk/hbbr
-          Restart=on-failure
+          Restart=always
           RestartSec=5
-          StandardOutput=journal
-          StandardError=journal
           
           [Install]
           WantedBy=multi-user.target
-          SRVHBBR
+          SRV2
           
           sudo systemctl daemon-reload
-          sudo systemctl enable rustdesk-hbbs rustdesk-hbbr 2>/dev/null
+          sudo systemctl enable rustdesk-hbbs rustdesk-hbbr
           sudo systemctl start rustdesk-hbbs rustdesk-hbbr
           sleep 2
           
           if sudo systemctl is-active rustdesk-hbbs > /dev/null; then
-            echo "✅ RustDesk services started"
+            echo "      Done: Services active"
           else
-            echo "⚠️ Services initializing..."
+            echo "      Done: Services starting..."
           fi
           
           echo ""
-          echo "═══════════════════════════════════════════"
-          echo "✅ INITIALIZATION COMPLETE"
-          echo "═══════════════════════════════════════════"
-          INIT
+          echo "==========================================="
+          echo "INITIALIZATION COMPLETE"
+          echo "==========================================="
+          echo ""
+          echo "Installed:"
+          echo "  - Ubuntu 24.04 LTS"
+          echo "  - Docker"
+          echo "  - Node.js v20"
+          echo "  - Python 3"
+          echo "  - RustDesk Server v1.41.9"
+          echo "  - UFW Firewall"
+          echo ""
+          echo "Server ready for RustDesk connections!"
+          SETUP_SCRIPT
           
           chmod +x /tmp/init.sh
           
-          echo "🚀 Executing initialization..."
+          echo "Executing initialization script..."
+          echo "This takes 5-10 minutes..."
+          echo ""
+          
           ssh -o StrictHostKeyChecking=accept-new \
               -o UserKnownHostsFile=/dev/null \
-              -o ConnectTimeout=10 \
+              -o LogLevel=ERROR \
               -i ~/.ssh/id_rsa \
-              root@${{ steps.info.outputs.ipv4 }} \
+              root@${{ steps.get_network.outputs.ipv4 }} \
               'bash -s' < /tmp/init.sh
           
-          echo "✅ Initialization complete"
+          echo ""
+          echo "SUCCESS: Server initialized"
 
-      - name: 🔑 Extract RustDesk Key
+      # ========================================
+      # PHASE 5: DOCUMENTATION
+      # ========================================
+
+      - name: Extract RustDesk Key
         id: rustdesk
         run: |
-          echo "🔑 Extracting RustDesk key..."
+          ip="${{ steps.get_network.outputs.ipv4 }}"
+          echo "Extracting RustDesk key (max 15 attempts)..."
+          
           key=""
-          for attempt in {1..15}; do
+          for i in {1..15}; do
             key=$(ssh -o StrictHostKeyChecking=accept-new \
                       -o UserKnownHostsFile=/dev/null \
-                      -o ConnectTimeout=5 \
+                      -o LogLevel=ERROR \
                       -i ~/.ssh/id_rsa \
-                      root@${{ steps.info.outputs.ipv4 }} \
-                      'cat /opt/rustdesk/id_ed25519.pub' 2>/dev/null || true)
+                      root@$ip \
+                      'cat /opt/rustdesk/id_ed25519.pub 2>/dev/null' || true)
+            
             if [ -n "$key" ]; then
-              echo "✅ Key extracted (attempt $attempt)"
+              echo "SUCCESS: Key extracted (attempt $i)"
               break
             fi
-            echo "   Waiting... [$attempt/15]"
+            
+            if [ $((i % 5)) -eq 0 ]; then
+              echo "  Attempt $i/15"
+            fi
             sleep 2
           done
           
           if [ -z "$key" ]; then
-            key="KEY_PENDING_FIRST_CONNECTION"
+            key="Key will generate on first connection"
           fi
+          
           echo "rustdesk_key=$key" >> $GITHUB_OUTPUT
 
-      - name: 📄 Generate Guide
+      - name: Generate Guide
         run: |
-          mkdir -p /tmp/guides
-          cat > /tmp/guides/CONNECTION_GUIDE.md << 'GUIDE'
-          # 🚀 RustDesk Server - Quick Start
+          mkdir -p /tmp/assets
           
-          ## 📱 Server Details
+          cat > /tmp/assets/GUIDE.md << 'DOC'
+          # RustDesk Server - Quick Start
           
-          | Item | Value |
-          |------|-------|
-          | **Name** | ${{ github.event.inputs.server_name }} |
-          | **IPv4** | `${{ steps.info.outputs.ipv4 }}` |
-          | **IPv6** | `${{ steps.info.outputs.ipv6 }}` |
-          | **Region** | ${{ steps.parse.outputs.region_code }} |
-          | **Status** | ✅ Ready |
+          ## Server Info
           
-          ## 🔗 Connect (3 Steps)
+          - Name: SERVER_NAME
+          - IPv4: SERVER_IP
+          - IPv6: SERVER_IPV6
+          - Region: SERVER_REGION
           
-          1. Download RustDesk from https://rustdesk.com
-          2. Enter IP: `${{ steps.info.outputs.ipv4 }}`
+          ## Connect (3 Steps)
+          
+          1. Download RustDesk: https://rustdesk.com
+          2. Enter IP: SERVER_IP
           3. Click Connect
           
-          ## 📦 Installed
+          ## What's Installed
           
-          ✅ Ubuntu 24.04 LTS  
-          ✅ Docker  
-          ✅ Node.js LTS  
-          ✅ Python 3  
-          ✅ RustDesk Server  
-          ✅ Firewall  
+          - Ubuntu 24.04 LTS
+          - Docker
+          - Node.js v20 LTS
+          - Python 3
+          - RustDesk Server v1.41.9
+          - UFW Firewall
           
-          ## 🗑️ Delete Server
+          ## SSH Access
           
-          Run: `Delete DigitalOcean Server` workflow  
-          Enter: `${{ github.event.inputs.server_name }}`
-          GUIDE
+          ```bash
+          ssh root@SERVER_IP
+          ```
           
-          echo "✅ Guide generated"
+          ## Delete Server
+          
+          Run: "Delete DigitalOcean Server" workflow
+          Enter: SERVER_NAME
+          
+          ## Support
+          
+          - RustDesk: https://rustdesk.com/docs/
+          - GitHub: https://github.com/Mahdi-Bagheban/Digital-Ocean
+          DOC
+          
+          sed -i "s/SERVER_NAME/${{ github.event.inputs.server_name }}/g" /tmp/assets/GUIDE.md
+          sed -i "s/SERVER_IP/${{ steps.get_network.outputs.ipv4 }}/g" /tmp/assets/GUIDE.md
+          sed -i "s/SERVER_IPV6/${{ steps.get_network.outputs.ipv6 }}/g" /tmp/assets/GUIDE.md
+          sed -i "s/SERVER_REGION/${{ github.event.inputs.region }}/g" /tmp/assets/GUIDE.md
+          
+          echo "Guide generated"
 
-      - name: 📸 Generate QR Code
+      - name: Generate QR Code
         run: |
-          qrencode -o /tmp/guides/QR_CODE.png "${{ steps.info.outputs.ipv4 }}" -s 10 -m 2
-          echo "✅ QR code generated"
+          qrencode -o /tmp/assets/QR.png "${{ steps.get_network.outputs.ipv4 }}" -s 10 -m 2
+          echo "QR code generated"
 
-      - name: 📦 Create Release
+      # ========================================
+      # PHASE 6: RELEASE
+      # ========================================
+
+      - name: Create Release
         uses: softprops/action-gh-release@v1
-        if: success()
         with:
-          tag_name: v1.0-${{ steps.create.outputs.droplet_id }}-${{ github.run_id }}
-          name: 🎉 ${{ github.event.inputs.server_name }} (ID: ${{ steps.create.outputs.droplet_id }})
+          tag_name: v14.0-${{ steps.create_droplet.outputs.droplet_id }}-${{ github.run_id }}
+          name: Server ${{ github.event.inputs.server_name }} (ID ${{ steps.create_droplet.outputs.droplet_id }})
           body: |
-            # ✅ Server Ready!
+            # Server Ready!
             
-            **IPv4:** `${{ steps.info.outputs.ipv4 }}`  
-            **IPv6:** `${{ steps.info.outputs.ipv6 }}`  
-            **Region:** ${{ steps.parse.outputs.region_code }}  
-            **Status:** ✅ Operational
+            **IPv4:** `${{ steps.get_network.outputs.ipv4 }}`  
+            **IPv6:** `${{ steps.get_network.outputs.ipv6 }}`  
+            **Region:** ${{ github.event.inputs.region }}
             
-            ## 🚀 Quick Start
-            1. Download RustDesk: https://rustdesk.com
-            2. Enter IP: `${{ steps.info.outputs.ipv4 }}`
+            ## Quick Start
+            1. Download: https://rustdesk.com
+            2. IP: `${{ steps.get_network.outputs.ipv4 }}`
             3. Connect
             
-            ## 📦 Installed
-            ✅ Ubuntu 24.04 LTS  
-            ✅ Docker + Node.js + Python  
-            ✅ RustDesk Server OSS  
-            ✅ UFW Firewall  
+            ## Installed
+            - Ubuntu 24.04 LTS
+            - Docker + Node.js + Python
+            - RustDesk Server v1.41.9
+            - UFW Firewall
             
-            ## 📄 Docs
-            See Connection Guide & QR Code in Assets
+            See GUIDE.md and QR.png in assets below.
           files: |
-            /tmp/guides/CONNECTION_GUIDE.md
-            /tmp/guides/QR_CODE.png
+            /tmp/assets/GUIDE.md
+            /tmp/assets/QR.png
           draft: false
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: 📋 Summary
+      # ========================================
+      # PHASE 7: SUMMARY
+      # ========================================
+
+      - name: Job Summary
         if: success()
         run: |
-          cat >> $GITHUB_STEP_SUMMARY << 'SUMMARY'
-          # ✅ Server Created!
+          cat >> $GITHUB_STEP_SUMMARY << 'END'
+          # Server Created Successfully!
+          
+          ## Details
           
           | Field | Value |
           |-------|-------|
-          | **Name** | ${{ github.event.inputs.server_name }} |
-          | **ID** | ${{ steps.create.outputs.droplet_id }} |
-          | **IPv4** | `${{ steps.info.outputs.ipv4 }}` |
-          | **IPv6** | `${{ steps.info.outputs.ipv6 }}` |
-          | **Region** | ${{ steps.parse.outputs.region_code }} |
+          | Name | ${{ github.event.inputs.server_name }} |
+          | ID | ${{ steps.create_droplet.outputs.droplet_id }} |
+          | IPv4 | `${{ steps.get_network.outputs.ipv4 }}` |
+          | IPv6 | `${{ steps.get_network.outputs.ipv6 }}` |
+          | Region | ${{ github.event.inputs.region }} |
           
-          ## 🎯 Connect Now
+          ## Connect Now
+          
           1. Download: https://rustdesk.com
-          2. IP: `${{ steps.info.outputs.ipv4 }}`
-          3. Connect!
+          2. IP: `${{ steps.get_network.outputs.ipv4 }}`
+          3. Connect
           
-          ## 📦 What's Installed
-          ✅ Ubuntu 24.04 LTS  
-          ✅ Docker  
-          ✅ Node.js  
-          ✅ Python 3  
-          ✅ RustDesk Server  
-          ✅ Firewall  
+          ## SSH Access
           
-          ## 🗑️ Delete When Done
-          Go to Actions → Delete DigitalOcean Server
+          ```bash
+          ssh root@${{ steps.get_network.outputs.ipv4 }}
+          ```
           
-          **بسم الله الرحمن الرحیم - یا علی!** 🌟
-          SUMMARY
+          ## Delete When Done
+          
+          Actions → Delete DigitalOcean Server
+          
+          ---
+          
+          Status: OPERATIONAL | Version: v14.0
+          END
 
-      - name: 🚨 Error Summary
+      - name: Error Summary
         if: failure()
         run: |
-          cat >> $GITHUB_STEP_SUMMARY << 'ERROR'
-          # ❌ Creation Failed
+          cat >> $GITHUB_STEP_SUMMARY << 'END'
+          # Creation Failed
           
-          ## 🔍 Troubleshooting
+          ## Check
           
-          1. **Check Secrets**
-             - DO_API_TOKEN valid?
-             - SSH_PRIVATE_KEY set?
+          1. Secrets: DO_API_TOKEN, SSH_PRIVATE_KEY
+          2. DigitalOcean: Credit, SSH key "MahdiArts"
+          3. Logs: Review errors above
+          4. Dashboard: Delete partial droplets
           
-          2. **Check Account**
-             - DigitalOcean has credit?
-             - SSH key "MahdiArts" exists?
+          ## Help
           
-          3. **Check Logs**
-             - Review step output
-             - Look for API errors
-          
-          4. **Manual Cleanup**
-             - Check DigitalOcean dashboard
-             - Delete partial droplets
-          
-          ERROR
+          - ERROR_ANALYSIS.md in repository
+          - GitHub Issues
+          END
