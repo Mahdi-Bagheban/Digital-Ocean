@@ -1,4 +1,4 @@
-name: '🏗️ Create DigitalOcean Server + RustDesk
+name: 🏗️ Create DigitalOcean Server + RustDesk
 
 on:
   workflow_dispatch:
@@ -141,7 +141,7 @@ jobs:
             
             if [ "$status" = "active" ]; then
               echo ""
-              echo "SUCCESS: Droplet active (${i}x2 = $((i*2)) seconds)"
+              echo "SUCCESS: Droplet active ($((i*2)) seconds)"
               exit 0
             fi
             
