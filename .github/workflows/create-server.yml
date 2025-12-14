@@ -1,4 +1,4 @@
-name: Create DigitalOcean Server with RustDesk
+name: '🏗️ Create DigitalOcean Server + RustDesk
 
 on:
   workflow_dispatch:
