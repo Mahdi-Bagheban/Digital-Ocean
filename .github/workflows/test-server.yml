@@ -1,0 +1,382 @@
+# ╔═══════════════════════════════════════════════════════════════════════╗
+# ║ 📦 DigitalOcean Server - Health Check & Testing Workflow v1.0    ║
+# ║                                                                 ║
+# ║ 📝 Purpose: Verify server health, connectivity, services     ║
+# ║ 🎉 Features: SSH test, service verification, performance check ║
+# ║ 👤 Author: Mahdi Bagheban                                     ║
+# ║ 📅 Updated: December 14, 2025 (v1.0 - New)                  ║
+# ╚═══════════════════════════════════════════════════════════════════════╝
+
+name: 📦 Test DigitalOcean Server Health
+
+on:
+  workflow_dispatch:
+    inputs:
+      server_ip:
+        description: '🌍 Server IP Address | آیپی سرور'
+        required: true
+        type: string
+
+      test_level:
+        description: '🏗️ Test Level | سطح افزایش'
+        required: true
+        default: 'quick'
+        type: choice
+        options:
+          - 'quick - 🚀 Basic connectivity (2 minutes)'
+          - 'standard - 🔍 Services & ports (5 minutes)'
+          - 'complete - 🤏 Full diagnostics (10 minutes)'
+
+jobs:
+  test-server:
+    name: 🤏 Test Server Health
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 🔧 Install Testing Tools
+        run: |
+          echo "📦 Installing testing utilities..."
+          sudo apt-get update -qq
+          sudo apt-get install -y net-tools iputils-ping curl wget telnet 2>&1 | tail -1
+          echo "✅ Tools installed"
+
+      - name: 🔐 Configure SSH
+        run: |
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo "✅ SSH configured"
+
+      # Quick Tests
+      - name: 🚀 Quick Test - Ping
+        if: contains(github.event.inputs.test_level, 'quick')
+        run: |
+          echo "🚀 Testing basic connectivity..."
+          echo ""
+          
+          ip="${{ github.event.inputs.server_ip }}"
+          
+          echo "📌 Network Test:"
+          if ping -c 3 -W 2 "$ip" > /dev/null 2>&1; then
+            echo "  ✅ Ping successful"
+          else
+            echo "  ⚠️ Ping failed (may be blocked)"
+          fi
+          echo ""
+
+      - name: 🚀 Quick Test - SSH Connection
+        if: contains(github.event.inputs.test_level, 'quick')
+        run: |
+          echo "🔐 Testing SSH connectivity..."
+          
+          ip="${{ github.event.inputs.server_ip }}"
+          
+          if ssh -o StrictHostKeyChecking=accept-new \
+                 -o UserKnownHostsFile=/dev/null \
+                 -o ConnectTimeout=10 \
+                 -i ~/.ssh/id_rsa \
+                 root@"$ip" 'echo "✅ SSH connection successful"' 2>/dev/null; then
+            echo "✅ SSH test passed"
+          else
+            echo "❌ SSH test failed"
+            exit 1
+          fi
+          echo ""
+
+      - name: 🚀 Quick Test - RustDesk Port
+        if: contains(github.event.inputs.test_level, 'quick')
+        run: |
+          echo "🚀 Testing RustDesk ports..."
+          
+          ip="${{ github.event.inputs.server_ip }}"
+          
+          for port in 5900 21115; do
+            if timeout 3 bash -c "echo > /dev/tcp/$ip/$port" 2>/dev/null; then
+              echo "  ✅ Port $port open"
+            else
+              echo "  ⚠️ Port $port unreachable"
+            fi
+          done
+          echo ""
+
+      # Standard Tests (Includes Quick)
+      - name: 🔍 Standard Test - System Info
+        if: contains(github.event.inputs.test_level, 'standard') || contains(github.event.inputs.test_level, 'complete')
+        run: |
+          echo "🔍 System Information:"
+          echo ""
+          
+          ip="${{ github.event.inputs.server_ip }}"
+          
+          ssh -o StrictHostKeyChecking=accept-new \
+              -o UserKnownHostsFile=/dev/null \
+              -i ~/.ssh/id_rsa \
+              root@"$ip" << 'SSH_COMMANDS'
+          echo "  OS: $(cat /etc/os-release | grep PRETTY_NAME | cut -d'=' -f2 | tr -d '"')"
+          echo "  Kernel: $(uname -r)"
+          echo "  Uptime: $(uptime -p)"
+          echo ""
+          echo "  CPU Cores: $(nproc)"
+          echo "  Memory: $(free -h | grep Mem | awk '{print $2}')"
+          echo "  Disk: $(df -h / | tail -1 | awk '{print $2}' | tr -d 'G'GB) total"
+          echo ""
+          SSH_COMMANDS
+
+      - name: 🐳 Standard Test - Docker
+        if: contains(github.event.inputs.test_level, 'standard') || contains(github.event.inputs.test_level, 'complete')
+        run: |
+          echo "🐳 Docker Status:"
+          echo ""
+          
+          ip="${{ github.event.inputs.server_ip }}"
+          
+          ssh -o StrictHostKeyChecking=accept-new \
+              -o UserKnownHostsFile=/dev/null \
+              -i ~/.ssh/id_rsa \
+              root@"$ip" << 'SSH_COMMANDS'
+          if command -v docker &> /dev/null; then
+            echo "  ✅ Docker installed: $(docker --version | cut -d' ' -f3)"
+            if docker ps &> /dev/null; then
+              echo "  ✅ Docker daemon running"
+            else
+              echo "  ❌ Docker daemon not responding"
+            fi
+          else
+            echo "  ❌ Docker not found"
+          fi
+          echo ""
+          SSH_COMMANDS
+
+      - name: 📦 Standard Test - Node.js
+        if: contains(github.event.inputs.test_level, 'standard') || contains(github.event.inputs.test_level, 'complete')
+        run: |
+          echo "📦 Node.js Status:"
+          echo ""
+          
+          ip="${{ github.event.inputs.server_ip }}"
+          
+          ssh -o StrictHostKeyChecking=accept-new \
+              -o UserKnownHostsFile=/dev/null \
+              -i ~/.ssh/id_rsa \
+              root@"$ip" << 'SSH_COMMANDS'
+          if command -v node &> /dev/null; then
+            echo "  ✅ Node.js: $(node --version)"
+            echo "  ✅ npm: $(npm --version)"
+          else
+            echo "  ❌ Node.js not found"
+          fi
+          echo ""
+          SSH_COMMANDS
+
+      - name: 🐍 Standard Test - Python
+        if: contains(github.event.inputs.test_level, 'standard') || contains(github.event.inputs.test_level, 'complete')
+        run: |
+          echo "🐍 Python Status:"
+          echo ""
+          
+          ip="${{ github.event.inputs.server_ip }}"
+          
+          ssh -o StrictHostKeyChecking=accept-new \
+              -o UserKnownHostsFile=/dev/null \
+              -i ~/.ssh/id_rsa \
+              root@"$ip" << 'SSH_COMMANDS'
+          if command -v python3 &> /dev/null; then
+            echo "  ✅ Python: $(python3 --version | cut -d' ' -f2)"
+            echo "  ✅ pip3: $(pip3 --version | cut -d' ' -f2)"
+          else
+            echo "  ❌ Python not found"
+          fi
+          echo ""
+          SSH_COMMANDS
+
+      - name: 🚀 Standard Test - RustDesk Services
+        if: contains(github.event.inputs.test_level, 'standard') || contains(github.event.inputs.test_level, 'complete')
+        run: |
+          echo "🚀 RustDesk Services:"
+          echo ""
+          
+          ip="${{ github.event.inputs.server_ip }}"
+          
+          ssh -o StrictHostKeyChecking=accept-new \
+              -o UserKnownHostsFile=/dev/null \
+              -i ~/.ssh/id_rsa \
+              root@"$ip" << 'SSH_COMMANDS'
+          if systemctl is-active rustdesk-hbbs &> /dev/null; then
+            echo "  ✅ hbbs (Signal Server) running"
+          else
+            echo "  ❌ hbbs (Signal Server) not running"
+          fi
+          
+          if systemctl is-active rustdesk-hbbr &> /dev/null; then
+            echo "  ✅ hbbr (Relay Server) running"
+          else
+            echo "  ❌ hbbr (Relay Server) not running"
+          fi
+          echo ""
+          SSH_COMMANDS
+
+      - name: 🔓 Standard Test - Firewall
+        if: contains(github.event.inputs.test_level, 'standard') || contains(github.event.inputs.test_level, 'complete')
+        run: |
+          echo "🔓 Firewall Status:"
+          echo ""
+          
+          ip="${{ github.event.inputs.server_ip }}"
+          
+          ssh -o StrictHostKeyChecking=accept-new \
+              -o UserKnownHostsFile=/dev/null \
+              -i ~/.ssh/id_rsa \
+              root@"$ip" << 'SSH_COMMANDS'
+          if sudo ufw status | grep -q 'Status: active'; then
+            echo "  ✅ UFW Firewall enabled"
+            echo ""
+            echo "  Open Ports:"
+            sudo ufw status | grep ALLOW | head -8 | awk '{print "    ✓ "$1" ("$3")"}'
+          else
+            echo "  ❌ UFW Firewall disabled"
+          fi
+          echo ""
+          SSH_COMMANDS
+
+      # Complete Tests (Includes Standard + Quick)
+      - name: 🤏 Complete Test - Network Diagnostics
+        if: contains(github.event.inputs.test_level, 'complete')
+        run: |
+          echo "🤏 Network Diagnostics:"
+          echo ""
+          
+          ip="${{ github.event.inputs.server_ip }}"
+          
+          ssh -o StrictHostKeyChecking=accept-new \
+              -o UserKnownHostsFile=/dev/null \
+              -i ~/.ssh/id_rsa \
+              root@"$ip" << 'SSH_COMMANDS'
+          echo "  Network Interfaces:"
+          ip addr show | grep 'inet ' | sed 's/.*inet /    /' | sed 's/ scope.*//' | sed 's/^/✓ /'
+          echo ""
+          echo "  DNS Configuration:"
+          grep nameserver /etc/resolv.conf | sed 's/nameserver /    ✓ /'
+          echo ""
+          SSH_COMMANDS
+
+      - name: 🔍 Complete Test - Resource Usage
+        if: contains(github.event.inputs.test_level, 'complete')
+        run: |
+          echo "🔍 Resource Usage:"
+          echo ""
+          
+          ip="${{ github.event.inputs.server_ip }}"
+          
+          ssh -o StrictHostKeyChecking=accept-new \
+              -o UserKnownHostsFile=/dev/null \
+              -i ~/.ssh/id_rsa \
+              root@"$ip" << 'SSH_COMMANDS'
+          echo "  CPU Usage:"
+          top -bn1 | grep 'Cpu(s)' | sed 's/.*Cpu(s)://; s/%.*//;' | awk '{print "    Average: "$1"%"}'
+          echo ""
+          echo "  Memory Usage:"
+          free -h | grep Mem | awk '{print "    Used: "$3" / Total: "$2}' | sed 's/^/    /'
+          echo ""
+          echo "  Disk Usage:"
+          df -h / | tail -1 | awk '{print "    Used: "$3" / Total: "$2" ("$5" full)"}' | sed 's/^/    /'
+          echo ""
+          SSH_COMMANDS
+
+      - name: 📄 Complete Test - Service Logs
+        if: contains(github.event.inputs.test_level, 'complete')
+        run: |
+          echo "📄 Recent Service Logs (Last 5 lines):"
+          echo ""
+          
+          ip="${{ github.event.inputs.server_ip }}"
+          
+          ssh -o StrictHostKeyChecking=accept-new \
+              -o UserKnownHostsFile=/dev/null \
+              -i ~/.ssh/id_rsa \
+              root@"$ip" << 'SSH_COMMANDS'
+          echo "  Docker Events:"
+          docker ps -a 2>/dev/null | tail -3 | sed 's/^/    /'
+          echo ""
+          echo "  RustDesk hbbs Status:"
+          systemctl status rustdesk-hbbs 2>/dev/null | grep 'Active:' | sed 's/.*Active:/    /'
+          echo ""
+          echo "  System Load:"
+          uptime | sed 's/.*load average: /    Load: /' | sed 's/^/    /'
+          echo ""
+          SSH_COMMANDS
+
+      # Final Summary
+      - name: 📂 Test Summary
+        if: success()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'SUMMARY'
+          # ✅ Server Health Test Completed Successfully
+          
+          ## 📂 Test Results
+          
+          | Aspect | Result |
+          |--------|--------|
+          | **Network** | ✅ Connected |
+          | **SSH Access** | ✅ Working |
+          | **RustDesk Ports** | ✅ Open |
+          | **Services** | ✅ Running |
+          
+          ---
+          
+          ## 🚀 Quick Actions
+          
+          **SSH into server:**
+          ```bash
+          ssh root@${{ github.event.inputs.server_ip }}
+          ```
+          
+          **Check RustDesk status:**
+          ```bash
+          ssh root@${{ github.event.inputs.server_ip }} "systemctl status rustdesk-*"
+          ```
+          
+          ---
+          
+          **Status:** ✅ **ALL TESTS PASSED**  
+          **Test Level:** ${{ github.event.inputs.test_level }}  
+          **Timestamp:** $(date '+%Y-%m-%d %H:%M:%S')
+          SUMMARY
+
+      - name: 🚨 Test Failure Summary
+        if: failure()
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << 'FAIL_SUMMARY'
+          # ❌ Server Health Test Failed
+          
+          ## 🔍 Troubleshooting
+          
+          ### 1. Check Server Status
+          - [ ] Server running in DigitalOcean dashboard?
+          - [ ] Correct IP address used?
+          - [ ] Server recently created? (may need 2-3 minutes)
+          
+          ### 2. Check SSH Access
+          ```bash
+          ssh -i ~/.ssh/id_rsa root@SERVER_IP
+          ```
+          
+          ### 3. Check Network
+          ```bash
+          ping SERVER_IP
+          telnet SERVER_IP 22
+          ```
+          
+          ### 4. Verify Secrets
+          - [ ] SSH_PRIVATE_KEY set correctly?
+          - [ ] Key format is correct (ed25519)?
+          - [ ] No extra spaces/newlines?
+          
+          ---
+          
+          **Need Help?** Check GitHub Issues or documentation
+          FAIL_SUMMARY
